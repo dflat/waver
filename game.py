@@ -12,6 +12,34 @@ class Color:
     CYAN = np.array([0,1,1])
     YELLOW = np.array([1,1,0])
 
+class Camera:
+    def __init__(self):
+        self.angle = 0.0
+        self.radius = 3.0
+        self.elevation = 2
+        self.target = Vector3([0.0, 0.0, 0.0])
+        self.pos = Vector3([self.radius, self.elevation, 0.0])
+        self.up = Vector3([0.0, 1.0, 0.0])
+        self.view = self.get_view_matrix()
+
+    def update(self):
+        # Update camera angle
+        self.angle += 0.01
+        if self.angle > 2 * np.pi:
+            self.angle -= 2 * np.pi
+
+        self.pos = Vector3([
+            self.radius * np.cos(self.angle),
+            self.elevation,  
+            self.radius * np.sin(self.angle)
+        ])
+
+        self.view = self.get_view_matrix()
+
+    def get_view_matrix(self):
+        """Calculates the view matrix for a camera orbiting the cube."""
+        return Matrix44.look_at(self.pos, self.target, self.up)
+
 class SceneObject:
     group = []
     e1 = np.array([1,0,0])
@@ -154,44 +182,28 @@ class Game(mglw.WindowConfig):
             """
         )
 
+        # instantiate objects
         cube = Cube(self, size=0.5)
         axes = Axes(self, origin=np.array([0,0,0], dtype='f4'), size=5)
 
-        self.perspective_projection = Matrix44.perspective_projection(45.0, self.aspect_ratio, 0.1, 100.0)
 
+        # setup projection matrices (orthographic and perspective)
         width = 2.0
         height = width / self.aspect_ratio
         self.orthographic_projection = Matrix44.orthogonal_projection( -width, width, -height, height, -10, 10)
+        self.perspective_projection = Matrix44.perspective_projection(45.0, self.aspect_ratio, 0.1, 100.0)
 
         self.use_perspective = True
 
-        #self.program['projection'].write(self.perspective_projection.astype('f4').tobytes())
-
-        self.angle = 0.0
-        self.radius = 3.0
-
-    def calculate_view_matrix(self, angle):
-        """Calculates the view matrix for a camera orbiting the cube."""
-        camera_position = Vector3([
-            self.radius * np.cos(angle),
-            self.radius * 0.5,  # Slight elevation
-            self.radius * np.sin(angle)
-        ])
-        target = Vector3([0.0, 0.0, 0.0])
-        up = Vector3([0.0, 1.0, 0.0])
-        return Matrix44.look_at(camera_position, target, up)
+        self.cam = Camera()
 
     def update(self, t, dt):
-        # Update camera angle
-        self.angle += 0.01
-        if self.angle > 2 * np.pi:
-            self.angle -= 2 * np.pi
-
-        # Calculate view matrix and write to the program
-        view = self.calculate_view_matrix(self.angle)
+        # update view matrix
+        self.cam.update()
+        view = self.cam.view
         self.program['view'].write(view.astype('f4').tobytes())
 
-        # Toggle projection type
+        # update projection matrix
         projection = self.perspective_projection if self.use_perspective else self.orthographic_projection
         self.program['projection'].write(projection.astype('f4').tobytes())
 
