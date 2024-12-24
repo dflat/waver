@@ -4,6 +4,7 @@ import math
 from pyrr import Matrix44, Vector3
 import moderngl_window as mglw
 from pathlib import Path
+from splines import Spline, SplinePatch, grid, wave_mesh
 
 class Color:
     RED = np.array([1,0,0])
@@ -18,7 +19,7 @@ class Camera:
     def __init__(self):
         self.azimuth = math.pi/4 # looking down center of +xz
         self.altitude = math.pi/2 # Level with xz-plane
-        self.dtheta = 0.00025
+        self.dtheta = 0#0.00025
         self.radius = 6.0
         #self.elevation = 2
         self.target = Vector3([0.0, 0.0, 0.0])
@@ -144,6 +145,27 @@ class Cube(SceneObject):
 
         return vertices[indices], colors 
 
+
+class SplineMesh(SceneObject):
+    def __init__(self, game, interval=(0,3), n_samps=11, origin=np.array([0,0,0], dtype='f4')):
+        self.origin = origin
+        self.interval = interval
+        self.n_samps = n_samps
+        super().__init__(game)
+        self.render_mode = moderngl.POINTS
+        game.ctx.point_size=5
+
+    def load_mesh(self):
+        o = self.origin
+        wm = wave_mesh(*self.interval, 4) # 4 x 4 grid over interval
+        sp = SplinePatch(wm)
+        self.patch = sp
+        ts = np.linspace(0,1,self.n_samps)
+        P = sp.eval_vec(ts)
+        verts = P.reshape(-1,3) # as points
+        return verts, np.tile(Color.GREY, (len(verts),1))
+
+
 class Grid(SceneObject):
     data_format = '3f 3f'
     attribute_names = ['in_position', 'in_color']
@@ -158,17 +180,15 @@ class Grid(SceneObject):
         super().__init__(game)
         self.render_mode = moderngl.LINES
         #self.render_mode = moderngl.POINTS
-        game.ctx.point_size=5
 
     def load_mesh(self):
         o = self.origin
         u = self.unit
         scalar = self.unit*(self.x_range[1]-self.x_range[0])/(self.x_points-1)
 
-        x = np.linspace(self.x_range[0], self.x_range[1], self.x_points)
-        y = np.linspace(self.y_range[0], self.y_range[1], self.y_points)
-        X, Y = np.meshgrid(x, y)
+        X, Y = grid(self.x_range, self.y_range, self.x_points, self.y_points)
         points = np.dstack((X, np.zeros_like(X), Y)).reshape(-1,3)
+
         vertices = []
 
         # Create lines along the rows (constant y)
@@ -273,6 +293,7 @@ class Game(mglw.WindowConfig):
         self.cube.translate((.25,0.25,.25))
         self.axes = Axes(self, origin=np.array([0,0,0], dtype='f4'), size=5)
         self.grid = Grid(self, unit=cube_size)
+        self.patch = SplineMesh(self)
 
 
         # setup projection matrices (orthographic and perspective)
