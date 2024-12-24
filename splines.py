@@ -89,7 +89,7 @@ def wave_mesh(start=0, end=3, n=4):
     size = end-start
     X, Y = grid(I, I, n, n)
     Z = wave2D(X,Y, xfreq=1/size, yfreq=1/size, A=1)
-    return np.array([X, Y, Z])
+    return np.array([X, Z, Y])
 
 def test(n=11):
     wm = wave_mesh()

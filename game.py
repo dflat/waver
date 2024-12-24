@@ -13,7 +13,8 @@ class Color:
     MAGENTA = np.array([1,0,1])
     CYAN = np.array([0,1,1])
     YELLOW = np.array([1,1,0])
-    GREY = np.array([.4,.4,.4])
+    GREY = np.array([.6,.6,.6])
+    WHITE = np.array([1,1,1])
 
 class Camera:
     def __init__(self):
@@ -152,7 +153,7 @@ class SplineMesh(SceneObject):
         self.interval = interval
         self.n_samps = n_samps
         super().__init__(game)
-        self.render_mode = moderngl.POINTS
+        #self.render_mode = moderngl.POINTS
         game.ctx.point_size=5
 
     def load_mesh(self):
@@ -164,6 +165,54 @@ class SplineMesh(SceneObject):
         P = sp.eval_vec(ts)
         verts = P.reshape(-1,3) # as points
         return verts, np.tile(Color.GREY, (len(verts),1))
+
+    def load_mesh(self):
+        """
+        Prepare meshgrid data for rendering with OpenGL, including alternating colors for each triangle pair.
+
+        Parameters:
+            V: numpy array of shape (3, n, n) representing the meshgrid vertices.
+
+        Returns:
+            vertices: Flattened array of vertex positions (numpy array of shape (n*n, 3)).
+            indices: Flattened array of triangle indices for rendering (numpy array of shape (m, 3)).
+            colors: Array of color values for each triangle (numpy array of shape (m, 3), where each row is [r, g, b]).
+        """
+        # Prepare indices and colors
+
+        wm = wave_mesh(*self.interval, 4) # 4 x 4 grid over interval
+        sp = SplinePatch(wm)
+        self.patch = sp
+        ts = np.linspace(0,1,self.n_samps)
+        P = sp.eval_vec(ts)
+        vertices = P.reshape(-1,3) # as points
+
+        indices = []
+        colors = []
+        c1 = [Color.WHITE]*3
+        c2 = [Color.GREY]*3
+        n = self.n_samps
+        for i in range(n - 1):
+            for j in range(n - 1):
+                # Calculate vertex indices for the two triangles of the current cell
+                top_left = i * n + j
+                top_right = top_left + 1
+                bottom_left = (i + 1) * n + j
+                bottom_right = bottom_left + 1
+
+                # First triangle: top-left, bottom-left, top-right
+                indices.append([top_left, bottom_left, top_right])
+                colors.extend(c1)  # White color for the first triangle
+
+                # Second triangle: top-right, bottom-left, bottom-right
+                indices.append([top_right, bottom_left, bottom_right])
+                colors.extend(c2)  # Gray color for the second triangle
+
+        # Convert to numpy arrays
+        indices = np.array(indices, dtype=np.uint32).flatten()  # Shape becomes (m,)
+        colors = np.array(colors, dtype=np.float32)  # Shape becomes (m, 3)
+
+        return vertices[indices], colors
 
 
 class Grid(SceneObject):
