@@ -37,6 +37,10 @@ class Game(mglw.WindowConfig):
         self.ctx.enable(moderngl.DEPTH_TEST)# | moderngl.CULL_FACE)
         self.dt = 0
         #setup_moderngl_antialiasing(self.ctx)
+        # windows compatibility
+        self.on_mouse_drag_event = self.mouse_drag_event
+        self.on_mouse_scroll_event = self.mouse_scroll_event
+        self.on_key_event = self.key_event
 
         self.program = self.ctx.program(
             vertex_shader="""
@@ -67,9 +71,9 @@ class Game(mglw.WindowConfig):
         # instantiate objects
         cube_size = 0.5
         self.cube = Cube(self, size=cube_size)
-        self.cube.translate((.25,0.25,.25))
+        self.cube.translate(Vector3((.25,0.25,.25)))
         self.axes = Axes(self, origin=np.array([0,0,0], dtype='f4'), size=5)
-        self.grid = Grid(self, unit=cube_size)
+        #self.grid = Grid(self, unit=cube_size)
         self.patch = SplineMesh(self, interval=(-3,3), n_samps=22*2)
 
 
@@ -93,6 +97,10 @@ class Game(mglw.WindowConfig):
         projection = self.perspective_projection if self.use_perspective else self.orthographic_projection
         self.program['projection'].write(projection.astype('f4').tobytes())
 
+        for obj in SceneObject.group:
+            obj.update(t, dt)
+
+
     def draw(self):
         self.ctx.clear(self.clear_color_val, self.clear_color_val,  self.clear_color_val)
 
@@ -106,11 +114,17 @@ class Game(mglw.WindowConfig):
         self.update(time, frame_time)
         self.draw()
 
+
+
+
     def key_event(self, key, action, modifiers):
         w = self.cube.size
         if action == self.wnd.keys.ACTION_PRESS:
             if key == self.wnd.keys.SPACE:
-                self.use_perspective = not self.use_perspective
+                #self.use_perspective = not self.use_perspective
+                self.cube.match_normals((1,0,0))
+
+
             elif key == self.wnd.keys.W: 
                 self.cube.translate(-w*SceneObject.e1)
             elif key == self.wnd.keys.S: 

@@ -1,5 +1,8 @@
 import numpy as np
 
+def rescale(x,mn=0,mx=1,a=0,b=1):
+	return a + b*(x - mn)/(mx-mn)
+
 class Color:
     RED = np.array([1,0,0])
     GREEN = np.array([0,1,0])

@@ -1,7 +1,7 @@
 import numpy as np
-from pyrr import Matrix44, Vector3
+from pyrr import Matrix44, Vector3, Quaternion
 import moderngl
-from utils import Color
+from utils import Color, rescale
 from splines import Spline, SplinePatch, grid, wave_mesh
 
 class SceneObject:
@@ -20,26 +20,80 @@ class SceneObject:
         self.render_mode = moderngl.TRIANGLES
         self.verts = None
         self.colors = None
-        self._model = Matrix44.identity()
-        self.rot = Matrix44.identity()
-        self.trans = Matrix44.identity()
-        self.scale = Matrix44.identity()
+        #self._model = Matrix44.identity()
+        self.rot = Quaternion()
+        self.pos = Vector3()
+        self.vel = Vector3()
+        self.acc = Vector3()
+        self.scale = 1
         self._load()
 
     @property
     def model(self):
-        return self._model
-        #return self.scale@self.rot@self.trans
+        return (Matrix44.from_quaternion(self.rot) @
+                Matrix44.from_translation(self.pos))
 
-    def situate(self, v):
-        self.trans = Matrix44.from_translation(v)
+    @property
+    def pos(self):
+        return self._pos
+
+    @pos.setter
+    def pos(self, v):
+        self._pos = v
+
+    @property
+    def normal(self):
+        local_normal = Vector3([0, 1, 0])
+        M = Matrix44.from_quaternion(self.rot)
+        #print(M)
+        v = M * local_normal
+        #print(v)
+        return v# Vector3((0,1,0))
+
+    def match_normals(self, other):
+        self.rot = self.align_normals(self.normal, other) * self.rot
+
+    @classmethod
+    def align_normals(cls, normal, other):
+        """
+        Aligns the normal of this to an axis.
+        """
+        # Normalize the input normals
+        normal = Vector3(normal).normalized
+        other = Vector3(other).normalized
+
+        # Compute the cross product to get the axis of rotation
+        cross = -np.cross(normal, other) # testing negative here TODO
+        cross_norm = np.linalg.norm(cross)
+        #print('cross', cross)
+
+        if cross_norm < 1e-6:  # Check if the vectors are parallel
+            print('small cross norm')
+            if np.dot(normal, other) > 0:  # Same direction, no rotation needed
+                return Quaternion()
+            else:  # Opposite direction, rotate 180 degrees around any perpendicular axis
+                arbitrary_axis = Vector3([1, 0, 0]) if abs(normal[0]) < 1 else Vector3([0, 1, 0])
+                axis = Vector3(np.cross(normal, arbitrary_axis)).normalized
+                return Quaternion.from_axis_rotation(axis, np.pi)
+
+        # Compute the angle using the dot product
+        dot = np.dot(normal, other)
+        angle = np.arccos(np.clip(dot, -1.0, 1.0))  # Clip to avoid numerical errors
+
+        # Create a quaternion from the axis and angle
+        axis = Vector3(cross).normalized
+        return Quaternion.from_axis_rotation(axis, angle)
 
     def translate(self, v):
         #self.trans = Matrix44.from_translation(v) @ self.trans
-        self._model = Matrix44.from_translation(v) @ self.model
+        self.pos += v
+        #self._model = Matrix44.from_translation(v) @ self.model
 
     def load_mesh(self):
         raise NotImplementedError()
+
+    def update(self, t, dt):
+        pass
 
     def render(self):
         self.vao.render(self.render_mode)
@@ -57,6 +111,12 @@ class Cube(SceneObject):
         self.size = size
         super().__init__(game)
     
+    def update(self, t, dt):
+        w = 2*np.pi*1/4*t
+        r = 1.5 + np.cos(w/2)
+        self.pos = Vector3((r*np.cos(w), 0, r*np.sin(w)))
+        self.game.patch.stick_to_surface(self)
+
     def load_mesh(self):
         """Create vertices and colors for a cube."""
         w = self.size/2
@@ -106,7 +166,7 @@ class SplineMesh(SceneObject):
         #self.render_mode = moderngl.POINTS
         game.ctx.point_size=5
 
-    def load_mesh(self):
+    def load_mesh_OLD(self):
         o = self.origin
         wm = wave_mesh(*self.interval, 4) # 4 x 4 grid over interval
         sp = SplinePatch(wm)
@@ -115,6 +175,36 @@ class SplineMesh(SceneObject):
         P = sp.eval_vec(ts)
         verts = P.reshape(-1,3) # as points
         return verts, np.tile(Color.GREY, (len(verts),1))
+
+    def eval(self, u, v):
+        mn, mx = self.interval
+        u = rescale(u, mn, mx, 0, 1)
+        v = rescale(v, mn, mx, 0, 1)
+        return self.patch.eval_one(u, v)
+           
+    def rescale(self, u, v):
+        mn, mx = self.interval
+        u = rescale(u, mn, mx, 0, 1)
+        v = rescale(v, mn, mx, 0, 1)
+        return u, v
+
+    def stick_to_surface(self, obj):
+        x,y,z = obj.pos
+        #print('cube pos', obj.pos)
+        surface_point = self.eval(x,z)
+        #print('surf point', surface_point)
+        obj.pos = Vector3(surface_point) + Vector3((0,obj.size/2 + 0.005,0))
+
+        # get normal from discrete diff in x and z directions
+        #eps = 0.001
+        #pdx = self.eval(x + eps,z) - surface_point
+        #pdz = self.eval(x,z + eps) - surface_point
+        #normal = Vector3(np.cross(pdz,pdx)).normalized
+
+        normal2 = self.patch.eval_tangent(*self.rescale(x,z)).normalized
+        #print(normal, normal2)
+
+        obj.match_normals(normal2) 
 
     def load_mesh(self):
         """
@@ -130,7 +220,7 @@ class SplineMesh(SceneObject):
         """
         # Prepare indices and colors
 
-        wm = wave_mesh(*self.interval, 4) # 4 x 4 grid over interval
+        wm = wave_mesh(*self.interval, 4, A=2) # 4 x 4 grid over interval
         sp = SplinePatch(wm)
         self.patch = sp
         ts = np.linspace(0,1,self.n_samps)

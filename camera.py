@@ -6,7 +6,7 @@ class Camera:
     def __init__(self):
         self.azimuth = math.pi/4 # looking down center of +xz
         self.altitude = math.pi/2 # Level with xz-plane
-        self.dtheta = 0#0.00025
+        self.dtheta = 0.00025*0
         self.radius = 6.0
         #self.elevation = 2
         self.target = Vector3([0.0, 0.0, 0.0])

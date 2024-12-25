@@ -57,9 +57,25 @@ class SplinePatch:
         self.GB = B.T @ self._controls @ B # GB tensor
 
     def eval_one(self, u, v):
+        """
+        u and v are normalized coordinates in (0, 1)
+        mapping onto the full scaled patch (i.e. u=1 => x=size)
+        """
         U = np.array((1, u, u*u, u**3))
         V = np.array((1, v, v*v, v**3))
-        return U.T @ self.GB @ V
+        #return U, self.GB, V
+        # todo: why did U and V flipped here work
+        return Vector3(np.array( (V.T @ self.GB @ U) )) 
+
+    def eval_tangent(self, u, v):
+        U = np.array((1, u, u*u, u**3))
+        V = np.array((1, v, v*v, v**3))
+        dU = np.array((0, 1, 2*u, 3*u*u))
+        dV = np.array((0, 1, 2*v, 3*v*v))
+        Tu = Vector3(np.array( (V.T @ self.GB @ dU) ))  
+        Tv = Vector3(np.array( (dV.T @ self.GB @ U) ))  
+        normal = np.cross(Tv.normalized, Tu.normalized)
+        return Vector3(normal)
 
     def eval_vec(self, u_samples, v_samples=None):
         if v_samples is None:
@@ -67,6 +83,20 @@ class SplinePatch:
         U = np.vander(u_samples, 4, increasing=True)
         V = np.vander(v_samples, 4, increasing=True)
         return (U @ self.GB @ V.T).T
+
+def wave_mesh(start=0, end=3, n=4, A=1):
+    """ Make a square grid evaluated on a wave function,
+        over interval (start, end) in x and y.
+        return evalated points on n*n sample points,
+        where n is the number of sampled points per axis.
+    """
+    I = (start, end)
+    size = end-start
+    X, Y = grid(I, I, n, n)
+    B = np.ones_like(X)
+    Z = wave2D(X,Y, xfreq=1/size, yfreq=1/size, A=A)
+    #return np.array([Y, Z, X]) # TODO FIX THIS was X,Z,Y, but axis were reversed??
+    return np.array([X, Z, Y]) # TODO FIX THIS was X,Z,Y, but axis were reversed??
 
 def wave2D(X, Y, xfreq=1/3, yfreq=1/3, A=0.5):
     wx = 2*np.pi*xfreq
@@ -79,22 +109,12 @@ def grid(x_range, y_range, nx, ny):
     y = np.linspace(y_range[0], y_range[1], ny)
     return np.meshgrid(x, y)
 
-def wave_mesh(start=0, end=3, n=4):
-    """ Make a square grid evaluated on a wave function,
-        over interval (start, end) in x and y.
-        return evalated points on n*n sample points,
-        where n is the number of sampled points per axis.
-    """
-    I = (start, end)
-    size = end-start
-    X, Y = grid(I, I, n, n)
-    Z = wave2D(X,Y, xfreq=1/size, yfreq=1/size, A=1)
-    return np.array([X, Z, Y])
 
 def test(n=11):
     wm = wave_mesh()
     sp = SplinePatch(wm)
     ts = np.linspace(0,1,n)
+    return sp
     return sp.eval_vec(ts)
 
 
