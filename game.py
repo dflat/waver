@@ -119,9 +119,6 @@ class Game(mglw.WindowConfig):
         self.update(time, frame_time)
         self.draw()
 
-
-
-
     def key_event(self, key, action, modifiers):
         #w = self.cube.size
         if action == self.wnd.keys.ACTION_PRESS:
@@ -161,6 +158,12 @@ class Game(mglw.WindowConfig):
         #self.clear_color_val = clamp(self.clear_color_val+dy, 0, 1)
 
         #print("Mouse wheel:", self.clear_color_val)
+
+    # Windows compatablility
+    on_render = render
+    on_key_event = key_event
+    on_mouse_drag_event = mouse_drag_event
+    on_mouse_scroll_event = mouse_scroll_event
 
 class Controls:
     def __init__(self, game):
