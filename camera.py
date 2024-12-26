@@ -3,7 +3,8 @@ from pyrr import Matrix44, Vector3
 import math
 
 class Camera:
-    def __init__(self):
+    def __init__(self, game):
+        self.game = game
         self.azimuth = math.pi/4 # looking down center of +xz
         self.altitude = math.pi/2 # Level with xz-plane
         self.dtheta = 0.00025*0
@@ -20,8 +21,10 @@ class Camera:
         y = np.cos(v)
         return r*Vector3([x,y,z])
 
-    def update(self):
+    def update(self, t, dt):
         # Update camera azimuth
+        self.target = self.game.cube.pos
+
         self.azimuth += self.dtheta
         if self.azimuth > 2 * math.pi:
             self.azimuth -= 2 * math.pi

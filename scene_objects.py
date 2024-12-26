@@ -1,7 +1,7 @@
 import numpy as np
 from pyrr import Matrix44, Vector3, Quaternion
 import moderngl
-from utils import Color, rescale
+from utils import Color, rescale, Mat4
 from splines import Spline, SplinePatch, grid, wave_mesh
 
 class SceneObject:
@@ -22,6 +22,7 @@ class SceneObject:
         self.colors = None
         #self._model = Matrix44.identity()
         self.rot = Quaternion()
+        self.R = Matrix44.identity()
         self.pos = Vector3()
         self.vel = Vector3()
         self.acc = Vector3()
@@ -30,8 +31,12 @@ class SceneObject:
 
     @property
     def model(self):
-        return (Matrix44.from_quaternion(self.rot) @
-                Matrix44.from_translation(self.pos))
+        Tr = Mat4.from_translation(self.pos)
+        return (Tr @ self.R) #.T.ravel()
+
+    @property
+    def model_to_array(self):
+        return self.model.T.ravel()
 
     @property
     def pos(self):
@@ -42,7 +47,9 @@ class SceneObject:
         self._pos = v
 
     @property
-    def normal(self):
+    def up_normal(self):
+        return np.array((0.,1.,0.))
+        #return self.R[:3,2]
         local_normal = Vector3([0, 1, 0])
         M = Matrix44.from_quaternion(self.rot)
         #print(M)
@@ -51,7 +58,8 @@ class SceneObject:
         return v# Vector3((0,1,0))
 
     def match_normals(self, other):
-        self.rot = self.align_normals(self.normal, other) * self.rot
+        self.R = Mat4.axis_to_axis(self.up_normal, other) # TODO multiply in, dont set?
+        #self.rot = self.align_normals(self.normal, other) * self.rot
 
     @classmethod
     def align_normals(cls, normal, other):
@@ -107,15 +115,51 @@ class SceneObject:
         )
 
 class Cube(SceneObject):
+    maxvel = 5
+
     def __init__(self, game, size=1):
         self.size = size
+        self.forward_offset_angle = 0
         super().__init__(game)
     
+    def rotate_about_local_up(self, theta):
+        Rup = Mat4.from_y_rotation(theta)
+        self.R = (self.R @ Rup)# @ self.R.T) @ self.R
+
+    @property
+    def model(self):
+        return super().model
+        Tr2 = Mat4.from_translation((0,1,0))
+        Tr3 = Mat4.from_translation((0,2,0))
+        Tr4 = Mat4.from_translation((0,1/np.sin(-np.pi/4),0))
+        Tr = Mat4.from_translation((2,1,4))
+        self.R = Mat4.from_x_rotation(-np.pi/4)
+        #return (self.R @ Tr2 @ Tr3) #.T.ravel()
+        return  (self.R @ Tr4 @ self.R.T) @ Tr2 @ self.R
+
+    def integrate(self,t,dt):
+        if self.game.controls.left:
+            vx = self.maxvel 
+        if self.game.controls.right:
+            vz = self.maxvel
+        self.vel = Vector3((vx,0,vz))
+        pass
+
     def update(self, t, dt):
-        w = 2*np.pi*1/4*t
-        r = 1.5 + np.cos(w/2)
-        self.pos = Vector3((r*np.cos(w), 0, r*np.sin(w)))
+        hz = 1/4
+        w = 2*np.pi*hz
+        r = 1.5 + np.cos(w*t/2)
+
+
+        if self.game.controls.right:
+            self.forward_offset_angle -= w*dt*3
+        if self.game.controls.left:
+            self.forward_offset_angle += w*dt*3
+
+        self.pos = Vector3((r*np.cos(w*t), 0, r*np.sin(w*t)))
+
         self.game.patch.stick_to_surface(self)
+        self.rotate_about_local_up(self.forward_offset_angle)
 
     def load_mesh(self):
         """Create vertices and colors for a cube."""
@@ -203,6 +247,9 @@ class SplineMesh(SceneObject):
 
         normal2 = self.patch.eval_tangent(*self.rescale(x,z)).normalized
         #print(normal, normal2)
+        #dir = np.dot(normal2, (0,1,0))
+        #if dir < 0:
+        #    print('negative normal', dir)
 
         obj.match_normals(normal2) 
 

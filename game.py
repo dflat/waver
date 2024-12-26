@@ -6,7 +6,7 @@ import moderngl_window as mglw
 from pathlib import Path
 from splines import Spline, SplinePatch, grid, wave_mesh
 from scene_objects import SceneObject, Cube, Grid, Axes, SplineMesh
-from utils import Color
+from utils import Color, clamp
 from camera import Camera
 
 
@@ -85,28 +85,33 @@ class Game(mglw.WindowConfig):
 
         self.use_perspective = True
 
-        self.cam = Camera()
+        self.cam = Camera(self)
+        self.controls = Controls(self)
 
     def update(self, t, dt):
+        self.controls.update(t, dt)
+
         # update view matrix
-        self.cam.update()
+        self.cam.update(t, dt)
         view = self.cam.view
-        self.program['view'].write(view.astype('f4').tobytes())
+        self.program['view'].write(view.astype('f4'))#.tobytes())
 
         # update projection matrix
         projection = self.perspective_projection if self.use_perspective else self.orthographic_projection
-        self.program['projection'].write(projection.astype('f4').tobytes())
+        self.program['projection'].write(projection.astype('f4'))#.tobytes())
 
         for obj in SceneObject.group:
             obj.update(t, dt)
 
+        # reset control input cache
+        self.controls.clear_just_pressed()
 
     def draw(self):
         self.ctx.clear(self.clear_color_val, self.clear_color_val,  self.clear_color_val)
 
         # draw objects
         for obj in SceneObject.group:
-            self.program['model'].write(obj.model.astype('f4').tobytes())
+            self.program['model'].write(obj.model_to_array.astype('f4'))#.tobytes())
             obj.render()
 
     def render(self, time, frame_time):
@@ -118,21 +123,25 @@ class Game(mglw.WindowConfig):
 
 
     def key_event(self, key, action, modifiers):
-        w = self.cube.size
+        #w = self.cube.size
         if action == self.wnd.keys.ACTION_PRESS:
-            if key == self.wnd.keys.SPACE:
-                #self.use_perspective = not self.use_perspective
-                self.cube.match_normals((1,0,0))
+            self.controls.press(key)
+        elif action == self.wnd.keys.ACTION_RELEASE:
+            self.controls.release(key)
+
+            # if key == self.wnd.keys.SPACE:
+            #     #self.use_perspective = not self.use_perspective
+            #     self.cube.match_normals((1,0,0))
 
 
-            elif key == self.wnd.keys.W: 
-                self.cube.translate(-w*SceneObject.e1)
-            elif key == self.wnd.keys.S: 
-                self.cube.translate(w*SceneObject.e1)
-            elif key == self.wnd.keys.A: 
-                self.cube.translate(w*SceneObject.e3)
-            elif key == self.wnd.keys.D: 
-                self.cube.translate(-w*SceneObject.e3)
+            # elif key == self.wnd.keys.W: 
+            #     self.cube.translate(-w*SceneObject.e1)
+            # elif key == self.wnd.keys.S: 
+            #     self.cube.translate(w*SceneObject.e1)
+            # elif key == self.wnd.keys.A: 
+            #     self.cube.translate(w*SceneObject.e3)
+            # elif key == self.wnd.keys.D: 
+            #     self.cube.translate(-w*SceneObject.e3)
 
     def mouse_drag_event(self, x, y, dx, dy):
         radPerSec = 1.5*self.dt
@@ -153,8 +162,47 @@ class Game(mglw.WindowConfig):
 
         #print("Mouse wheel:", self.clear_color_val)
 
-def clamp(x, a=0, b=1):
-    return min(b, max(a, x))
+class Controls:
+    def __init__(self, game):
+        self.game = game
+        self.pressed = {}
+        self.just_pressed = {}
+
+    @property
+    def left(self):
+        return self.game.wnd.keys.A in self.pressed
+    @property
+    def right(self):
+        return self.game.wnd.keys.D in self.pressed
+    @property
+    def up(self):
+        return self.game.wnd.keys.W in self.pressed
+    @property
+    def down(self):
+        return self.game.wnd.keys.S in self.pressed
+    @property
+    def space(self):
+        return self.game.wnd.keys.SPACE in self.pressed
+    
+    def press(self, key):
+        self.pressed[key] = 1
+        self.just_pressed[key] = 1
+        print('pressed', key)
+
+    def release(self, key):
+        self.pressed.pop(key)
+        print('released', key)
+
+    def was_just_pressed(self, key):
+        return key in self.just_pressed
+
+    def clear_just_pressed(self):
+        self.just_pressed = {} # todo: find out the order of key events/render calls
+
+    def update(self, t, dt):
+        pass
+
+
 
 if __name__ == '__main__':
     mglw.run_window_config(Game)
