@@ -23,6 +23,36 @@ class Mat4:
 		self.m = m
 
 	@classmethod
+	def build_frame(cls, up, forward, origin=(0,0,0)):
+	    """
+	    Construct a right-handed 3D orthonormal basis given a unit "up" vector
+	    and a vector loosely in the "forward" direction.
+
+	    Parameters:
+	        up (np.ndarray): Unit vector pointing "up".
+	        forward (np.ndarray): Vector loosely in the "forward" direction.
+	    """
+	    forward /= np.linalg.norm(forward)
+	    
+	    right = np.cross(up, forward)
+	    right /= np.linalg.norm(right)
+	    
+	    # Compute the corrected forward vector (cross product of right and up)
+	    forward = np.cross(right, up)
+
+	    frame = Mat4.identity()
+	    frame[:3,0] = right
+	    frame[:3,1] = up
+	    frame[:3,2] = forward
+	    frame[:3,3] = origin
+	    return frame
+
+
+	@classmethod
+	def identity(cls):
+		return np.eye(4, dtype='f4')
+
+	@classmethod
 	def make_rigid_frame_euler(cls, xtheta=0, ytheta=0, ztheta=0, origin=(0,0,0)):
 		R = Mat4.from_x_rotation(xtheta)
 		R = R @ Mat4.from_y_rotation(ytheta)

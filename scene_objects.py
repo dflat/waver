@@ -4,16 +4,17 @@ from pyrr import Matrix44, Vector3, Quaternion
 import moderngl
 from utils import Color, rescale, Mat4, clamp
 from splines import Spline, SplinePatch, grid, wave_mesh
+import sys
 
 class SceneObject:
     group = []
-    e1 = np.array([1,0,0])
-    e2 = np.array([0,1,0])
-    e3 = np.array([0,0,1])
+    e1 = np.array([1,0,0], dtype='f4')
+    e2 = np.array([0,1,0], dtype='f4')
+    e3 = np.array([0,0,1], dtype='f4')
     data_format = '3f 3f'
     attribute_names = ['in_position', 'in_color']
 
-    def __init__(self, game):
+    def __init__(self, game, frame=None):
         self.group.append(self)
         self.game = game
         self.ctx = game.ctx
@@ -22,7 +23,7 @@ class SceneObject:
         self.verts = None
         self.colors = None
 
-        self._o = Mat4.make_rigid_frame_euler()
+        self._o = Mat4.make_rigid_frame_euler() if frame is None else frame
 
         self.vel = Vector3()
         self.acc = Vector3()
@@ -39,6 +40,9 @@ class SceneObject:
     def o(self, value):
         self._o = value
     
+    def get_axis(self, i):
+        return self.o[:3, i]
+
     def world_transform(self, T):
         """
         Transform local object frame with T,
@@ -99,6 +103,9 @@ class SceneObject:
     def load_mesh(self):
         raise NotImplementedError()
 
+    def handle_input(self, controls):
+        pass
+
     def update(self, t, dt):
         pass
 
@@ -114,22 +121,23 @@ class SceneObject:
         )
 
 class Cube(SceneObject):
-    maxvel = 0.25*2
+    maxvel = 1.25
 
     def __init__(self, game, size=1):
         self.size = size
         self.forward_offset_angle = 0
         self.jumping = False
-        self.friction_coefficient = 1.99
+        self.friction_coefficient = 4.75 # ~4 for 'ice', ~8 for quick stop
         self.mass = 1
-        self.y_rot = Mat4.make_rigid_frame_euler()
+        self.y_rot = Mat4.identity()
+        self.hover_offset = Mat4.identity()
         super().__init__(game)
     
     def get_object_matrix(self):
         """
         Compose object matrix with independently stored extra transforms
         """
-        return self.o @ self.y_rot
+        return self.o @ self.y_rot @ self.hover_offset
 
     def rotate_about_local_up(self, theta):
         #self.transform(Mat4.from_y_rotation(theta))
@@ -158,6 +166,21 @@ class Cube(SceneObject):
             self.pos[i] = xmax
             self.vel[i] = 0
 
+    def handle_input(self, controls):
+        k = controls.keys 
+        dv = 0.25
+        oldvel, oldfric = self.maxvel, self.friction_coefficient
+        if controls.was_just_pressed(k.I):
+            self.maxvel += dv
+        if controls.was_just_pressed(k.K):
+            self.maxvel -= dv
+        if controls.was_just_pressed(k.J):
+            self.friction_coefficient += dv
+        if controls.was_just_pressed(k.L):
+            self.friction_coefficient -= dv
+        if (oldvel, oldfric) != (self.maxvel, self.friction_coefficient):
+            print('vel:', self.maxvel, 'fric:', self.friction_coefficient)
+
     def update(self, t, dt):
         # parameters and constants (here for temporary conveinence)
         hz = 1/4
@@ -182,18 +205,19 @@ class Cube(SceneObject):
             self.vel[1] += self.maxvel/2
 
         if self.jumping:
-            self.vel[1] = g*dt #self.vel[1]*decay_rate*dt
+            self.vel[1] += -g*dt #self.vel[1]*decay_rate*dt
 
         # physics step
         self.integrate(t, dt)
 
         # x-boundary enforcing
         self.clamp_x_position_to_surface(self.game.patch, i=0)
-        self.clamp_x_position_to_surface(self.game.patch, i=2)
+        #self.clamp_x_position_to_surface(self.game.patch, i=2)
 
         # constrain avatar to surface
         self.stick_to_surface(self.game.patch)
 
+        #self.transform(Mat4.from_translation((0.0,0.25*dt,0.0)))
 
         self.forward_offset_angle = self.game.controls.cursor[0]*(-math.pi/2)#w*dt*3
         self.rotate_about_local_up(self.forward_offset_angle) #TODO fix for new frame system
@@ -201,11 +225,27 @@ class Cube(SceneObject):
 
     def stick_to_surface(self, surface: 'SplineMesh'):
         x,y,z = self.pos
+
         surface_point = surface.get_point(x,z)
-        self.ground_point = Vector3(surface_point) + Vector3((0,self.size/2 + 0.005,0))
-        self.pos = self.ground_point.copy()
         surface_normal = surface.get_normal(x,z)
-        self.match_normals(surface_normal) 
+        #print(surface_normal)
+
+        self.ground_point = Vector3(surface_point) #+ Vector3((0,self.size/2 + 0.005,0))
+        #self.ground_point = Vector3(surface_point) + surface_normal#+ (self.size/2 + 0.005)*surface_normal
+        #self.pos = self.ground_point.copy()
+        #self.transform(Mat4.from_translation(surface_normal))
+        self.hover_offset[1, 3] = self.size/2 + 0.005
+
+
+        # trying out direct frame building instead of rotating to match normal
+        forward = self.e3
+        self.o = Mat4.build_frame(up=surface_normal, forward=forward, origin=self.ground_point)
+        #print('before', self.pos)
+        #self.transform(Mat4.from_translation((0.0,0.5,0.0)))
+        #print('afterT', self.pos)
+        #sys.exit()
+
+        #self.match_normals(surface_normal) 
 
 
     def load_mesh(self):
@@ -375,11 +415,19 @@ class Grid(SceneObject):
 
 
 class Axes(SceneObject):
-    def __init__(self, game, origin=np.array([0,0,0], dtype='f4'), size=5):
-        self.origin = origin
+    def __init__(self, game, parent=None, frame=None, size=5):
         self.size = size
-        super().__init__(game)
+        self.parent = parent
+        super().__init__(game, frame)
         self.render_mode = moderngl.LINES
+
+    @property
+    def origin(self):
+        return self.pos
+
+    def update(self, t, dt):
+        if self.parent:
+            self.o = self.parent.o
 
     def load_mesh(self):
         o = self.origin

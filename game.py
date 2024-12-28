@@ -6,7 +6,7 @@ import moderngl_window as mglw
 from pathlib import Path
 from splines import Spline, SplinePatch, grid, wave_mesh
 from scene_objects import SceneObject, Cube, Grid, Axes, SplineMesh
-from utils import Color, clamp, rescale
+from utils import Mat4, Color, clamp, rescale
 from camera import Camera
 
 class Game(mglw.WindowConfig):
@@ -53,8 +53,10 @@ class Game(mglw.WindowConfig):
 
         # instantiate objects
         cube_size = 0.5
+        self.world = Mat4.make_rigid_frame_euler()
         self.cube = Cube(self, size=cube_size)
-        self.axes = Axes(self, origin=np.array([0,0,0], dtype='f4'), size=5)
+        self.cube_frame = Axes(self, parent=self.cube, size=1)
+        self.axes = Axes(self, frame=self.world, size=5)
         #self.grid = Grid(self, unit=cube_size)
         self.patch = SplineMesh(self, interval=(-3,3), n_samps=22*2)
 
@@ -75,6 +77,7 @@ class Game(mglw.WindowConfig):
 
         # update scene objects
         for obj in SceneObject.group:
+            obj.handle_input(self.controls)
             obj.update(t, dt)
 
         # update view matrix
