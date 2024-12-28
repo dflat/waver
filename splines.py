@@ -67,7 +67,7 @@ class SplinePatch:
         # todo: why did U and V flipped here work
         return Vector3(np.array( (V.T @ self.GB @ U) )) 
 
-    def eval_tangent(self, u, v):
+    def get_normal(self, u, v):
         U = np.array((1, u, u*u, u**3))
         V = np.array((1, v, v*v, v**3))
         dU = np.array((0, 1, 2*u, 3*u*u))
@@ -75,7 +75,7 @@ class SplinePatch:
         Tu = Vector3(np.array( (V.T @ self.GB @ dU) ))  
         Tv = Vector3(np.array( (dV.T @ self.GB @ U) ))  
         normal = np.cross(Tv.normalized, Tu.normalized)
-        return Vector3(normal)
+        return Vector3(normal).normalized
 
     def eval_vec(self, u_samples, v_samples=None):
         if v_samples is None:

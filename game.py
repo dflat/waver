@@ -9,26 +9,12 @@ from scene_objects import SceneObject, Cube, Grid, Axes, SplineMesh
 from utils import Color, clamp
 from camera import Camera
 
-
-def setup_moderngl_antialiasing(ctx):
-    """
-    Sets up ModernGL context for antialiased line rendering.
-
-    Parameters:
-        ctx (moderngl.Context): The ModernGL context.
-    """
-    ctx.enable(moderngl.BLEND)
-    ctx.blend_func = (moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA)
-
-#    ctx.enable(moderngl.LINE_SMOOTH)
-    ctx.line_width = 1.5
-
 class Game(mglw.WindowConfig):
     gl_version = (3, 3)
     title = "Orbiting Cube"
     window_size = 1280,720
     aspect_ratio = 16 / 9
-    #resource_dir = (Path(__file__).parent / 'resources').resolve()
+    resource_dir = (Path(__file__).parent / 'resources').resolve()
     clear_color_val = 0.09#0.15 #0.9
 
     def __init__(self, **kwargs):
@@ -36,11 +22,8 @@ class Game(mglw.WindowConfig):
 
         self.ctx.enable(moderngl.DEPTH_TEST)# | moderngl.CULL_FACE)
         self.dt = 0
-        #setup_moderngl_antialiasing(self.ctx)
-        # windows compatibility
-        self.on_mouse_drag_event = self.mouse_drag_event
-        self.on_mouse_scroll_event = self.mouse_scroll_event
-        self.on_key_event = self.key_event
+        self.t = 0
+        self.events = 0
 
         self.program = self.ctx.program(
             vertex_shader="""
@@ -91,6 +74,10 @@ class Game(mglw.WindowConfig):
     def update(self, t, dt):
         self.controls.update(t, dt)
 
+        # update scene objects
+        for obj in SceneObject.group:
+            obj.update(t, dt)
+
         # update view matrix
         self.cam.update(t, dt)
         view = self.cam.view
@@ -100,8 +87,6 @@ class Game(mglw.WindowConfig):
         projection = self.perspective_projection if self.use_perspective else self.orthographic_projection
         self.program['projection'].write(projection.astype('f4'))#.tobytes())
 
-        for obj in SceneObject.group:
-            obj.update(t, dt)
 
         # reset control input cache
         self.controls.clear_just_pressed()
@@ -116,6 +101,13 @@ class Game(mglw.WindowConfig):
 
     def render(self, time, frame_time):
         self.dt = frame_time
+        self.t += frame_time
+
+        if self.t > 1: # debugging mouse poll rate
+            self.t = 0
+            #print('mouse drag events per second:', self.events)
+            self.events = 0
+
         self.update(time, frame_time)
         self.draw()
 
@@ -130,7 +122,6 @@ class Game(mglw.WindowConfig):
             #     #self.use_perspective = not self.use_perspective
             #     self.cube.match_normals((1,0,0))
 
-
             # elif key == self.wnd.keys.W: 
             #     self.cube.translate(-w*SceneObject.e1)
             # elif key == self.wnd.keys.S: 
@@ -141,6 +132,7 @@ class Game(mglw.WindowConfig):
             #     self.cube.translate(-w*SceneObject.e3)
 
     def mouse_drag_event(self, x, y, dx, dy):
+        #self.events+=1
         radPerSec = 1.5*self.dt
         dx = dx*radPerSec/2
         self.cam.azimuth += dx*.5
@@ -168,24 +160,25 @@ class Game(mglw.WindowConfig):
 class Controls:
     def __init__(self, game):
         self.game = game
+        self.keys = self.game.wnd.keys
         self.pressed = {}
         self.just_pressed = {}
 
     @property
     def left(self):
-        return self.game.wnd.keys.A in self.pressed
+        return self.keys.A in self.pressed
     @property
     def right(self):
-        return self.game.wnd.keys.D in self.pressed
+        return self.keys.D in self.pressed
     @property
     def up(self):
-        return self.game.wnd.keys.W in self.pressed
+        return self.keys.W in self.pressed
     @property
     def down(self):
-        return self.game.wnd.keys.S in self.pressed
+        return self.keys.S in self.pressed
     @property
     def space(self):
-        return self.game.wnd.keys.SPACE in self.pressed
+        return self.keys.SPACE in self.pressed
     
     def press(self, key):
         self.pressed[key] = 1
@@ -203,7 +196,9 @@ class Controls:
         self.just_pressed = {} # todo: find out the order of key events/render calls
 
     def update(self, t, dt):
-        pass
+        K = self.keys
+        if self.was_just_pressed(K.T):
+            self.game.cam.track = not self.game.cam.track
 
 
 

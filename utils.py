@@ -23,6 +23,14 @@ class Mat4:
 		self.m = m
 
 	@classmethod
+	def make_rigid_frame_euler(cls, xtheta=0, ytheta=0, ztheta=0, origin=(0,0,0)):
+		R = Mat4.from_x_rotation(xtheta)
+		R = R @ Mat4.from_y_rotation(ytheta)
+		R = R @ Mat4.from_z_rotation(ztheta)
+		T = Mat4.from_translation(origin)
+		return T @ R 
+
+	@classmethod
 	def from_translation(cls, v):
 		M = np.eye(4, dtype='f4')
 		M[:3, 3] = v

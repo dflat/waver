@@ -1,7 +1,7 @@
 import numpy as np
 from pyrr import Matrix44, Vector3, Quaternion
 import moderngl
-from utils import Color, rescale, Mat4
+from utils import Color, rescale, Mat4, clamp
 from splines import Spline, SplinePatch, grid, wave_mesh
 
 class SceneObject:
@@ -20,14 +20,36 @@ class SceneObject:
         self.render_mode = moderngl.TRIANGLES
         self.verts = None
         self.colors = None
-        #self._model = Matrix44.identity()
+
+        self.o = Mat4.make_rigid_frame_euler()
+
         self.rot = Quaternion()
         self.R = Matrix44.identity()
         self.pos = Vector3()
         self.vel = Vector3()
         self.acc = Vector3()
+
+        self.mass = 1
         self.scale = 1
         self._load()
+
+    def transform(self, T):
+        """
+        Transform local object frame with T
+        """
+        self.o = self.o @ T
+
+    def aux_transform(self, T, A):
+        """
+        Apply T to object frame with
+        respect to frame A
+        """
+        Ai = np.linalg.inverse(A)
+        self.o = A @ T @ Ai @ self.o
+
+    @property
+    def object_matrix_as_array(self):
+        return self.o.T.ravel()
 
     @property
     def model(self):
@@ -48,49 +70,12 @@ class SceneObject:
 
     @property
     def up_normal(self):
+        # maybe use:
+        # return self.o[1,:3] # Y axis of local frame
         return np.array((0.,1.,0.))
-        #return self.R[:3,2]
-        local_normal = Vector3([0, 1, 0])
-        M = Matrix44.from_quaternion(self.rot)
-        #print(M)
-        v = M * local_normal
-        #print(v)
-        return v# Vector3((0,1,0))
 
     def match_normals(self, other):
         self.R = Mat4.axis_to_axis(self.up_normal, other) # TODO multiply in, dont set?
-        #self.rot = self.align_normals(self.normal, other) * self.rot
-
-    @classmethod
-    def align_normals(cls, normal, other):
-        """
-        Aligns the normal of this to an axis.
-        """
-        # Normalize the input normals
-        normal = Vector3(normal).normalized
-        other = Vector3(other).normalized
-
-        # Compute the cross product to get the axis of rotation
-        cross = -np.cross(normal, other) # testing negative here TODO
-        cross_norm = np.linalg.norm(cross)
-        #print('cross', cross)
-
-        if cross_norm < 1e-6:  # Check if the vectors are parallel
-            print('small cross norm')
-            if np.dot(normal, other) > 0:  # Same direction, no rotation needed
-                return Quaternion()
-            else:  # Opposite direction, rotate 180 degrees around any perpendicular axis
-                arbitrary_axis = Vector3([1, 0, 0]) if abs(normal[0]) < 1 else Vector3([0, 1, 0])
-                axis = Vector3(np.cross(normal, arbitrary_axis)).normalized
-                return Quaternion.from_axis_rotation(axis, np.pi)
-
-        # Compute the angle using the dot product
-        dot = np.dot(normal, other)
-        angle = np.arccos(np.clip(dot, -1.0, 1.0))  # Clip to avoid numerical errors
-
-        # Create a quaternion from the axis and angle
-        axis = Vector3(cross).normalized
-        return Quaternion.from_axis_rotation(axis, angle)
 
     def translate(self, v):
         #self.trans = Matrix44.from_translation(v) @ self.trans
@@ -115,11 +100,14 @@ class SceneObject:
         )
 
 class Cube(SceneObject):
-    maxvel = 5
+    maxvel = 0.25*2
 
     def __init__(self, game, size=1):
         self.size = size
         self.forward_offset_angle = 0
+        self.jumping = False
+        self.friction_coefficient = 1.99
+        self.mass = 1
         super().__init__(game)
     
     def rotate_about_local_up(self, theta):
@@ -128,38 +116,73 @@ class Cube(SceneObject):
 
     @property
     def model(self):
+        # defunct
         return super().model
-        Tr2 = Mat4.from_translation((0,1,0))
-        Tr3 = Mat4.from_translation((0,2,0))
-        Tr4 = Mat4.from_translation((0,1/np.sin(-np.pi/4),0))
-        Tr = Mat4.from_translation((2,1,4))
-        self.R = Mat4.from_x_rotation(-np.pi/4)
-        #return (self.R @ Tr2 @ Tr3) #.T.ravel()
-        return  (self.R @ Tr4 @ self.R.T) @ Tr2 @ self.R
 
     def integrate(self,t,dt):
-        if self.game.controls.left:
-            vx = self.maxvel 
-        if self.game.controls.right:
-            vz = self.maxvel
-        self.vel = Vector3((vx,0,vz))
-        pass
+        # Update velocity with acceleration and apply frictional decay
+        friction_force = -self.friction_coefficient * self.vel
+        net_acc = self.acc + friction_force / self.mass
+        self.vel += net_acc * dt
+
+        # Update position based on velocity
+        self.pos += self.vel * dt
+
+    def clamp_x_position_to_surface(self, surface: 'SplineMesh'):
+        hs = self.size/2
+        xmin, xmax = surface.interval
+        xmin += hs
+        xmax -= hs
+        if self.pos[0] < xmin:
+            self.pos[0] = xmin
+            self.vel[0] = 0
+        elif self.pos[0] > xmax:
+            self.pos[0] = xmax
+            self.vel[0] = 0
+
+        #self.pos[0] = clamp(self.pos[0], xmin + hs, xmax - hs)
+
 
     def update(self, t, dt):
         hz = 1/4
         w = 2*np.pi*hz
         r = 1.5 + np.cos(w*t/2)
-
+        decay_rate = 0.9
 
         if self.game.controls.right:
-            self.forward_offset_angle -= w*dt*3
+            #self.forward_offset_angle -= w*dt*3
+            self.vel[0] += self.maxvel 
         if self.game.controls.left:
-            self.forward_offset_angle += w*dt*3
+            #self.forward_offset_angle += w*dt*3
+            self.vel[0] -= self.maxvel 
 
-        self.pos = Vector3((r*np.cos(w*t), 0, r*np.sin(w*t)))
+        if not self.jumping and self.game.controls.space:
+            self.jumping = True
+            self.vel[1] += self.maxvel/2
 
-        self.game.patch.stick_to_surface(self)
+        if self.jumping:
+            self.vel[1] = g*dt #self.vel[1]*decay_rate*dt
+
+
+
+        #self.pos = Vector3((r*np.cos(w*t), 0, r*np.sin(w*t)))
+        self.integrate(t, dt)
+        self.clamp_x_position_to_surface(self.game.patch)
+
+
+        self.stick_to_surface(self.game.patch)
+
         self.rotate_about_local_up(self.forward_offset_angle)
+
+
+    def stick_to_surface(self, surface: 'SplineMesh'):
+        x,y,z = self.pos
+        surface_point = surface.get_point(x,z)
+        self.ground_point = Vector3(surface_point) + Vector3((0,self.size/2 + 0.005,0))
+        self.pos = self.ground_point.copy()
+        surface_normal = surface.get_normal(x,z)
+        self.match_normals(surface_normal) 
+
 
     def load_mesh(self):
         """Create vertices and colors for a cube."""
@@ -220,38 +243,20 @@ class SplineMesh(SceneObject):
         verts = P.reshape(-1,3) # as points
         return verts, np.tile(Color.GREY, (len(verts),1))
 
-    def eval(self, u, v):
+    def get_point(self, u, v):
         mn, mx = self.interval
         u = rescale(u, mn, mx, 0, 1)
         v = rescale(v, mn, mx, 0, 1)
         return self.patch.eval_one(u, v)
            
+    def get_normal(self, x, z):
+        return self.patch.get_normal(*self.rescale(x,z))
+
     def rescale(self, u, v):
         mn, mx = self.interval
         u = rescale(u, mn, mx, 0, 1)
         v = rescale(v, mn, mx, 0, 1)
         return u, v
-
-    def stick_to_surface(self, obj):
-        x,y,z = obj.pos
-        #print('cube pos', obj.pos)
-        surface_point = self.eval(x,z)
-        #print('surf point', surface_point)
-        obj.pos = Vector3(surface_point) + Vector3((0,obj.size/2 + 0.005,0))
-
-        # get normal from discrete diff in x and z directions
-        #eps = 0.001
-        #pdx = self.eval(x + eps,z) - surface_point
-        #pdz = self.eval(x,z + eps) - surface_point
-        #normal = Vector3(np.cross(pdz,pdx)).normalized
-
-        normal2 = self.patch.eval_tangent(*self.rescale(x,z)).normalized
-        #print(normal, normal2)
-        #dir = np.dot(normal2, (0,1,0))
-        #if dir < 0:
-        #    print('negative normal', dir)
-
-        obj.match_normals(normal2) 
 
     def load_mesh(self):
         """
@@ -267,7 +272,7 @@ class SplineMesh(SceneObject):
         """
         # Prepare indices and colors
 
-        wm = wave_mesh(*self.interval, 4, A=2) # 4 x 4 grid over interval
+        wm = wave_mesh(*self.interval, 4, A=6) # 4 x 4 grid over interval
         sp = SplinePatch(wm)
         self.patch = sp
         ts = np.linspace(0,1,self.n_samps)
