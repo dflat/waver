@@ -6,7 +6,7 @@ import moderngl_window as mglw
 from pathlib import Path
 from splines import Spline, SplinePatch, grid, wave_mesh
 from scene_objects import SceneObject, Cube, Grid, Axes, SplineMesh
-from utils import Color, clamp
+from utils import Color, clamp, rescale
 from camera import Camera
 
 class Game(mglw.WindowConfig):
@@ -54,7 +54,6 @@ class Game(mglw.WindowConfig):
         # instantiate objects
         cube_size = 0.5
         self.cube = Cube(self, size=cube_size)
-        self.cube.translate(Vector3((.25,0.25,.25)))
         self.axes = Axes(self, origin=np.array([0,0,0], dtype='f4'), size=5)
         #self.grid = Grid(self, unit=cube_size)
         self.patch = SplineMesh(self, interval=(-3,3), n_samps=22*2)
@@ -96,7 +95,7 @@ class Game(mglw.WindowConfig):
 
         # draw objects
         for obj in SceneObject.group:
-            self.program['model'].write(obj.model_to_array.astype('f4'))#.tobytes())
+            self.program['model'].write(obj.object_matrix_as_array.astype('f4'))#.tobytes())
             obj.render()
 
     def render(self, time, frame_time):
@@ -105,7 +104,7 @@ class Game(mglw.WindowConfig):
 
         if self.t > 1: # debugging mouse poll rate
             self.t = 0
-            #print('mouse drag events per second:', self.events)
+            print('mouse drag events per second:', self.events)
             self.events = 0
 
         self.update(time, frame_time)
@@ -118,21 +117,8 @@ class Game(mglw.WindowConfig):
         elif action == self.wnd.keys.ACTION_RELEASE:
             self.controls.release(key)
 
-            # if key == self.wnd.keys.SPACE:
-            #     #self.use_perspective = not self.use_perspective
-            #     self.cube.match_normals((1,0,0))
-
-            # elif key == self.wnd.keys.W: 
-            #     self.cube.translate(-w*SceneObject.e1)
-            # elif key == self.wnd.keys.S: 
-            #     self.cube.translate(w*SceneObject.e1)
-            # elif key == self.wnd.keys.A: 
-            #     self.cube.translate(w*SceneObject.e3)
-            # elif key == self.wnd.keys.D: 
-            #     self.cube.translate(-w*SceneObject.e3)
-
     def mouse_drag_event(self, x, y, dx, dy):
-        #self.events+=1
+        self.events+=1
         radPerSec = 1.5*self.dt
         dx = dx*radPerSec/2
         self.cam.azimuth += dx*.5
@@ -145,17 +131,23 @@ class Game(mglw.WindowConfig):
         dy = dy*radPerSec
 
         self.cam.radius = clamp(self.cam.radius + dy, 1, 10)
-
         #print(x,y,dx,dy)
         #self.clear_color_val = clamp(self.clear_color_val+dy, 0, 1)
 
-        #print("Mouse wheel:", self.clear_color_val)
+    def mouse_position_event(self, x, y, dx, dy):
+        x = rescale(x, 0, self.window_size[0], -1, 1)
+        y = rescale(y, 0, self.window_size[1], 1, -1)
+        #print("Mouse position:", x, y, dx, dy)
+        self.controls.cursor[0] = x
+        self.controls.cursor[1] = y
+        #print(self.controls.cursor)
 
     # Windows compatablility
     on_render = render
     on_key_event = key_event
     on_mouse_drag_event = mouse_drag_event
     on_mouse_scroll_event = mouse_scroll_event
+    on_mouse_position_event = mouse_position_event
 
 class Controls:
     def __init__(self, game):
@@ -163,6 +155,7 @@ class Controls:
         self.keys = self.game.wnd.keys
         self.pressed = {}
         self.just_pressed = {}
+        self.cursor = np.array((0,0), dtype='f4')
 
     @property
     def left(self):

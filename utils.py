@@ -2,7 +2,7 @@ import numpy as np
 import math
 
 def rescale(x,mn=0,mx=1,a=0,b=1):
-	return a + b*(x - mn)/(mx-mn)
+	return a + (b-a)*(x - mn)/(mx-mn)
 
 def clamp(x, a=0, b=1):
     return min(b, max(a, x))

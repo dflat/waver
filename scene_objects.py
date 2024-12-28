@@ -1,4 +1,5 @@
 import numpy as np
+import math
 from pyrr import Matrix44, Vector3, Quaternion
 import moderngl
 from utils import Color, rescale, Mat4, clamp
@@ -21,17 +22,30 @@ class SceneObject:
         self.verts = None
         self.colors = None
 
-        self.o = Mat4.make_rigid_frame_euler()
+        self._o = Mat4.make_rigid_frame_euler()
 
-        self.rot = Quaternion()
-        self.R = Matrix44.identity()
-        self.pos = Vector3()
         self.vel = Vector3()
         self.acc = Vector3()
 
         self.mass = 1
         self.scale = 1
         self._load()
+
+    @property
+    def o(self):
+        return self._o
+
+    @o.setter
+    def o(self, value):
+        self._o = value
+    
+    def world_transform(self, T):
+        """
+        Transform local object frame with T,
+        with respect to the world frame
+        (a shortcut for this common aux transform).
+        """
+        self.o = T @ self.o
 
     def transform(self, T):
         """
@@ -47,40 +61,40 @@ class SceneObject:
         Ai = np.linalg.inverse(A)
         self.o = A @ T @ Ai @ self.o
 
+    def get_object_matrix(self):
+        return self.o
+
     @property
     def object_matrix_as_array(self):
-        return self.o.T.ravel()
-
-    @property
-    def model(self):
-        Tr = Mat4.from_translation(self.pos)
-        return (Tr @ self.R) #.T.ravel()
-
-    @property
-    def model_to_array(self):
-        return self.model.T.ravel()
+        return self.get_object_matrix().T.ravel()
 
     @property
     def pos(self):
-        return self._pos
+        return self.o[:3,3]
 
     @pos.setter
     def pos(self, v):
-        self._pos = v
+        self.o[:3,3] = v
 
     @property
+    def R(self):
+        return self.o[:3,:3]
+
+    @R.setter
+    def R(self, Rot3):
+        self.o[:3,:3] = Rot3
+    
+    @property
     def up_normal(self):
-        # maybe use:
-        # return self.o[1,:3] # Y axis of local frame
-        return np.array((0.,1.,0.))
+        return self.o[:3,1] # Y axis of local frame
+        #return np.array((0.,1.,0.)) #old way
 
     def match_normals(self, other):
-        self.R = Mat4.axis_to_axis(self.up_normal, other) # TODO multiply in, dont set?
+        R = Mat4.axis_to_axis(self.up_normal, other) # TODO multiply in, dont set?
+        self.transform(R)
 
     def translate(self, v):
-        #self.trans = Matrix44.from_translation(v) @ self.trans
         self.pos += v
-        #self._model = Matrix44.from_translation(v) @ self.model
 
     def load_mesh(self):
         raise NotImplementedError()
@@ -108,16 +122,20 @@ class Cube(SceneObject):
         self.jumping = False
         self.friction_coefficient = 1.99
         self.mass = 1
+        self.y_rot = Mat4.make_rigid_frame_euler()
         super().__init__(game)
     
-    def rotate_about_local_up(self, theta):
-        Rup = Mat4.from_y_rotation(theta)
-        self.R = (self.R @ Rup)# @ self.R.T) @ self.R
+    def get_object_matrix(self):
+        """
+        Compose object matrix with independently stored extra transforms
+        """
+        return self.o @ self.y_rot
 
-    @property
-    def model(self):
-        # defunct
-        return super().model
+    def rotate_about_local_up(self, theta):
+        #self.transform(Mat4.from_y_rotation(theta))
+        self.y_rot = Mat4.from_y_rotation(theta)
+        #Rup = Mat4.from_y_rotation(theta)
+        #self.R = (self.R @ Rup)# @ self.R.T) @ self.R
 
     def integrate(self,t,dt):
         # Update velocity with acceleration and apply frictional decay
@@ -128,34 +146,37 @@ class Cube(SceneObject):
         # Update position based on velocity
         self.pos += self.vel * dt
 
-    def clamp_x_position_to_surface(self, surface: 'SplineMesh'):
+    def clamp_x_position_to_surface(self, surface: 'SplineMesh', i=0):
         hs = self.size/2
         xmin, xmax = surface.interval
         xmin += hs
         xmax -= hs
-        if self.pos[0] < xmin:
-            self.pos[0] = xmin
-            self.vel[0] = 0
-        elif self.pos[0] > xmax:
-            self.pos[0] = xmax
-            self.vel[0] = 0
-
-        #self.pos[0] = clamp(self.pos[0], xmin + hs, xmax - hs)
-
+        if self.pos[i] < xmin:
+            self.pos[i] = xmin
+            self.vel[i] = 0
+        elif self.pos[i] > xmax:
+            self.pos[i] = xmax
+            self.vel[i] = 0
 
     def update(self, t, dt):
+        # parameters and constants (here for temporary conveinence)
         hz = 1/4
         w = 2*np.pi*hz
         r = 1.5 + np.cos(w*t/2)
         decay_rate = 0.9
+        g = 9.8
 
+        # check for controller input
         if self.game.controls.right:
-            #self.forward_offset_angle -= w*dt*3
             self.vel[0] += self.maxvel 
         if self.game.controls.left:
-            #self.forward_offset_angle += w*dt*3
             self.vel[0] -= self.maxvel 
+        if self.game.controls.up:
+            self.vel[2] -= self.maxvel 
+        if self.game.controls.down:
+            self.vel[2] += self.maxvel 
 
+        # jumping logic (hack for now)
         if not self.jumping and self.game.controls.space:
             self.jumping = True
             self.vel[1] += self.maxvel/2
@@ -163,16 +184,19 @@ class Cube(SceneObject):
         if self.jumping:
             self.vel[1] = g*dt #self.vel[1]*decay_rate*dt
 
-
-
-        #self.pos = Vector3((r*np.cos(w*t), 0, r*np.sin(w*t)))
+        # physics step
         self.integrate(t, dt)
-        self.clamp_x_position_to_surface(self.game.patch)
 
+        # x-boundary enforcing
+        self.clamp_x_position_to_surface(self.game.patch, i=0)
+        self.clamp_x_position_to_surface(self.game.patch, i=2)
 
+        # constrain avatar to surface
         self.stick_to_surface(self.game.patch)
 
-        self.rotate_about_local_up(self.forward_offset_angle)
+
+        self.forward_offset_angle = self.game.controls.cursor[0]*(-math.pi/2)#w*dt*3
+        self.rotate_about_local_up(self.forward_offset_angle) #TODO fix for new frame system
 
 
     def stick_to_surface(self, surface: 'SplineMesh'):
