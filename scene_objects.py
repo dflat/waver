@@ -57,13 +57,15 @@ class SceneObject:
         """
         self.o = self.o @ T
 
-    def aux_transform(self, T, A):
+    def aux_transform(self, M, A):
         """
-        Apply T to object frame with
+        Apply M to object frame with
         respect to frame A
         """
-        Ai = np.linalg.inverse(A)
-        self.o = A @ T @ Ai @ self.o
+        M = Mat4.get_transform_in_basis(M, A)
+        self.o = M @ self.o
+        #Ai = np.linalg.inv(A) # todo: use rigid_inverse
+        #ßself.o = A @ M @ Ai @ self.o
 
     def get_object_matrix(self):
         return self.o
@@ -137,6 +139,10 @@ class Cube(SceneObject):
         """
         Compose object matrix with independently stored extra transforms
         """
+        # rotate against aux frame (camera basis, cube center)
+        #A = Mat4.make_aux(R=self.game.cam.view.T, T=self.o)
+        #M = Mat4.get_transform_in_basis(self.y_rot, A)
+        #return M @ self.o @ self.hover_offset
         return self.o @ self.y_rot @ self.hover_offset
 
     def rotate_about_local_up(self, theta):

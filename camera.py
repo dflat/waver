@@ -41,7 +41,7 @@ class Camera:
         #    self.elevation,  
             #self.radius * np.sin(self.azimuth)
         #])
-        self.pos = self.orbit(self.azimuth, self.altitude, self.radius)
+        self.pos = self.target + self.orbit(self.azimuth, self.altitude, self.radius)
         #print('pos',self.pos)
 
         self.view = self.get_view_matrix()

@@ -18,6 +18,10 @@ class Color:
     LIGHTGREY = np.array([.9,.9,.9])
     WHITE = np.array([1,1,1])
 
+class Vec4:
+	def __init__(self, v=None):
+		self.v = np.array((0,0,0,1), dtype='f4') if v is None else numpy.array(v, dtype='f4')
+
 class Mat4:
 	def __init__(self, m:np.ndarray):
 		self.m = m
@@ -47,6 +51,32 @@ class Mat4:
 	    frame[:3,3] = origin
 	    return frame
 
+
+	@classmethod
+	def make_aux(cls, R, T):
+		P = np.eye(4)
+		P[:3,:3] = R[:3,:3]
+		P[:3, 3] = T[:3, 3]
+		return P
+
+	@classmethod
+	def get_transform_in_basis(cls, M, A):
+		Ai = np.linalg.inv(A) # todo: use rigid_inverse flag?
+		return A @ M @ Ai
+
+	@classmethod
+	def rigid_inverse(cls, M):
+		"""
+		Assume M = TR, return Minv = Rinv @ Tinv = R^T @ T(-o),
+		taking advantage of this simpler invertiblilty,
+		should be more numerically stable.
+		"""
+		P = np.eye(4)
+		RT = M[:3,:3].T
+		o = RT @ -M[:3,3]
+		P[:3,:3] = RT
+		P[:3,3] = o
+		return P
 
 	@classmethod
 	def identity(cls):

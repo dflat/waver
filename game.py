@@ -36,7 +36,9 @@ class Game(mglw.WindowConfig):
             uniform mat4 projection;
 
             void main() {
-                gl_Position = projection * view * model * vec4(in_position, 1.0);
+                float x = sin(in_position.x);
+                vec3 offset = vec3(0,0,0);
+                gl_Position = projection * view * model * vec4(offset+in_position, 1.0);
                 color = in_color;
             }
             """,
@@ -45,8 +47,21 @@ class Game(mglw.WindowConfig):
             in vec3 color;
             out vec4 fragColor;
 
+            float pi = 3.14159;
+            float freq = 1/pi;
+            vec2 c = vec2(1280/2, 720/2);
+            float R = 1280;
+            float n = 10;
+
             void main() {
-                fragColor = vec4(color, 1.0);
+                float r = length(gl_FragCoord.xy - c);
+                float y = gl_FragCoord.y;
+                float s = sin(2*pi*freq*y);
+                s = floor(mod(y/7.2, 2))/2;
+                vec3 offset = vec3(s,s,s);//sin(x)/2);
+                float L = pow(1 - r/R, 1);
+                float mask = floor(n*L);
+                fragColor = vec4(mask/n*color, 1.0);
             }
             """
         )
