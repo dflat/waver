@@ -133,6 +133,7 @@ class Cube(SceneObject):
         self.mass = 1
         self.y_rot = Mat4.identity()
         self.hover_offset = Mat4.identity()
+        self.player = None
         super().__init__(game)
     
     def get_object_matrix(self):
@@ -194,6 +195,18 @@ class Cube(SceneObject):
         r = 1.5 + np.cos(w*t/2)
         decay_rate = 0.9
         g = 9.8
+
+        if self.player:
+            print('got player')
+            if self.player.state.dpright:
+                self.vel[0] += self.maxvel 
+            if self.player.state.dpleft:
+                self.vel[0] -= self.maxvel 
+            if self.player.state.dpup:
+                self.vel[2] -= self.maxvel 
+            if self.player.state.dpdown:
+                self.vel[2] += self.maxvel 
+
 
         # check for controller input
         if self.game.controls.right:
