@@ -2,7 +2,7 @@ import numpy as np
 import math
 from pyrr import Matrix44, Vector3, Quaternion
 import moderngl
-from utils import Color, rescale, Mat4, clamp
+from utils import Color, rescale, Mat4, clamp, project_onto_axis
 from splines import Spline, SplinePatch, grid, wave_mesh
 import sys
 
@@ -11,6 +11,7 @@ class SceneObject:
     e1 = np.array([1,0,0], dtype='f4')
     e2 = np.array([0,1,0], dtype='f4')
     e3 = np.array([0,0,1], dtype='f4')
+    up = e2.copy()
     data_format = '3f 3f'
     attribute_names = ['in_position', 'in_color']
 
@@ -124,6 +125,8 @@ class SceneObject:
 
 class Cube(SceneObject):
     maxvel = 1.25
+    maxspeed = 8
+    max_angular_speed = 5
 
     def __init__(self, game, size=1):
         self.size = size
@@ -188,6 +191,49 @@ class Cube(SceneObject):
         if (oldvel, oldfric) != (self.maxvel, self.friction_coefficient):
             print('vel:', self.maxvel, 'fric:', self.friction_coefficient)
 
+    def get_angular_veloctiy(self, vdir, norm):
+        # vdir is the direction of linear velocity from 
+        # user input. Calculate rotation by projecting
+        # into null space of world up vector
+
+        if norm < .25:
+            return 0
+        cam_forward = self.game.cam.get_forward() 
+        cam_forward_xz = cam_forward - project_onto_axis(self.up, cam_forward)
+        cam_forward_xz /= np.linalg.norm(cam_forward_xz)
+        cam_right_xz = np.cross(self.up, cam_forward_xz) #
+
+        # basis in xz plane based on camera's forward direction
+        # used to take combinations by input vector for camera-relative control
+        cam_basis_xz = Mat4.build_basis(cam_right_xz, self.up, cam_forward_xz)
+        cam_relative_vel = cam_basis_xz @ vdir
+
+        #vcam = np.array(self.game.cam.view[:3,:3] @ vdir)
+        #vcamxz = vcam - project_onto_axis(self.up, vcam)
+        #assert np.allclose(cam_relative_vel, vcamxz)
+        #print('cam_rel:', cam_relative_vel.round(3), 'vcamxz:', vcamxz.round(3))
+        #vcamxz /= np.linalg.norm(vcamxz)
+        #cam_relative_vel = vcamxz
+        # note: cam_relative_vel seems more correct than vcamxz
+
+
+
+        #print('cam forward:', np.round(cam_forward_xz,2), end=' -- ')
+        #print('cam right:', np.round(cam_right_xz,2), end=' -- ')
+        #print('input vel:', np.round(vdir,2), end=' -- ')
+        #print('cam rel vel:', np.round(cam_relative_vel,2))
+
+
+        ##print(cam_forward_xz)
+        cos_angle = np.dot(cam_forward_xz, vdir)
+        sin_angle = np.cross(cam_forward_xz, vdir)[1]
+        angle_of_divergence = math.atan2(sin_angle,cos_angle)
+        self.rotate_about_local_up(angle_of_divergence)
+        #print(f"angle: {angle_of_divergence:.1f}")
+
+        return cam_relative_vel
+
+
     def update(self, t, dt):
         # parameters and constants (here for temporary conveinence)
         hz = 1/4
@@ -196,16 +242,40 @@ class Cube(SceneObject):
         decay_rate = 0.9
         g = 9.8
 
+        dpad = True
         if self.player:
-            print('got player')
-            if self.player.state.dpright:
-                self.vel[0] += self.maxvel 
-            if self.player.state.dpleft:
-                self.vel[0] -= self.maxvel 
-            if self.player.state.dpup:
-                self.vel[2] -= self.maxvel 
-            if self.player.state.dpdown:
-                self.vel[2] += self.maxvel 
+            vdir, norm = self.player.leftaxis
+
+            if dpad:
+            #    vdir = Vector3()
+                if self.player.state.dpright:
+                    vdir[0] += 1
+                    norm = np.linalg.norm(vdir)
+                    #self.vel[0] += self.maxvel 
+                if self.player.state.dpleft:
+                    vdir[0] -= 1
+                    norm = np.linalg.norm(vdir)
+                    #self.vel[0] -= self.maxvel 
+                if self.player.state.dpup:
+                    vdir[2] -= 1
+                    norm = np.linalg.norm(vdir)
+                    #self.vel[2] -= self.maxvel 
+                if self.player.state.dpdown:
+                    vdir[2] += 1
+                    #self.vel[2] += self.maxvel 
+                    norm = np.linalg.norm(vdir)
+
+            # handle player's looking direction
+            # match to velocity direction
+
+            vdir = self.get_angular_veloctiy(vdir, norm)
+
+            self.vel += vdir*norm*self.maxvel
+            speed = np.linalg.norm(self.vel)
+            if speed > self.maxspeed:
+                v = self.vel.normalized
+                self.vel = v*self.maxspeed
+
 
 
         # check for controller input
@@ -231,15 +301,16 @@ class Cube(SceneObject):
 
         # x-boundary enforcing
         self.clamp_x_position_to_surface(self.game.patch, i=0)
-        #self.clamp_x_position_to_surface(self.game.patch, i=2)
+        self.clamp_x_position_to_surface(self.game.patch, i=2)
 
         # constrain avatar to surface
         self.stick_to_surface(self.game.patch)
 
         #self.transform(Mat4.from_translation((0.0,0.25*dt,0.0)))
 
-        self.forward_offset_angle = self.game.controls.cursor[0]*(-math.pi/2)#w*dt*3
-        self.rotate_about_local_up(self.forward_offset_angle) #TODO fix for new frame system
+        #self.forward_offset_angle = self.game.controls.cursor[0]*(-math.pi/2)#w*dt*3
+        #self.rotate_about_local_up(self.forward_offset_angle) #TODO fix for new frame system
+
 
 
     def stick_to_surface(self, surface: 'SplineMesh'):
@@ -355,7 +426,7 @@ class SplineMesh(SceneObject):
         """
         # Prepare indices and colors
 
-        wm = wave_mesh(*self.interval, 4, A=6) # 4 x 4 grid over interval
+        wm = wave_mesh(*self.interval, 4, A=0) # 4 x 4 grid over interval
         sp = SplinePatch(wm)
         self.patch = sp
         ts = np.linspace(0,1,self.n_samps)

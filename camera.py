@@ -1,13 +1,16 @@
 import numpy as np
 from pyrr import Matrix44, Vector3
 import math
+from animation import Animation
 
 class Camera:
     def __init__(self, game):
         self.game = game
         self.azimuth = math.pi/4 # looking down center of +xz
         self.altitude = math.pi/2*0.65 # Level with xz-plane
-        self.dtheta = 0.00025*0
+        self.dtheta = 0.00025*10
+        self.spin = False
+        self.azimuth_lock = False
         self.radius = 6.0*1.5
         #self.elevation = 2
         self.target = Vector3([0.0, 0.0, 0.0])
@@ -23,18 +26,27 @@ class Camera:
         y = np.cos(v)
         return r*Vector3([x,y,z])
 
+    def handle_input(self, controls):
+        k = controls.keys 
+        if controls.was_just_pressed(k.SPACE):
+            anim = Animation(obj=self, property='azimuth', deltaval=math.pi/2, dur=1)
+            anim.start()
+
     def update(self, t, dt):
         # Update camera azimuth
-        self.azimuth += self.dtheta
+        if self.spin:
+            self.azimuth += self.dtheta
+
         if self.azimuth > 2 * math.pi:
             self.azimuth -= 2 * math.pi
 
         # if position tracking cube
         if self.track:
-	        self.target = self.game.cube.pos
-	        sgn = 1 if self.inverted_x_track else -1
-	        r = max(3, self.radius)
-	        self.azimuth = sgn*math.asin(self.game.cube.pos[0]/r) + math.pi/2
+            self.target = self.game.cube.pos
+            if self.azimuth_lock:
+                sgn = 1 if self.inverted_x_track else -1
+                r = max(3, self.radius)
+                self.azimuth = sgn*math.asin(self.game.cube.pos[0]/r) + math.pi/2
 
         #self.pos = Vector3([
         #    self.radius * np.cos(self.azimuth),
@@ -42,9 +54,17 @@ class Camera:
             #self.radius * np.sin(self.azimuth)
         #])
         self.pos = self.target + self.orbit(self.azimuth, self.altitude, self.radius)
-        #print('pos',self.pos)
+        #print('pos',np.round(self.pos,2))
 
         self.view = self.get_view_matrix()
+        #print(np.round(self.view,2))
+
+    def get_forward(self):
+        """
+        view is stored as inverse camera transform, and in row major order.
+        So world-space forward vector appears in the 3rd column.
+        """
+        return np.array(self.view[:3, 2])
 
     def get_view_matrix(self):
         """Calculates the view matrix for a camera orbiting the cube."""

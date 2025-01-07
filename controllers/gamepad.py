@@ -1,5 +1,6 @@
 import pyglet
 from pyrr import Vector3
+import numpy as np
 import time
 from copy import deepcopy
 from collections import deque
@@ -29,6 +30,8 @@ class GamePadState:
         return repr(self.__dict__)
 
 class GamePad:
+    dead_zone_thresh = 0.04 # magnitude under which to treat as zero
+
     def __init__(self, controller, _id):
         self.controller = controller # reference to underlying HID object interface
         self._id = _id # id to manage connection and disconnection by GamePadManager
@@ -44,6 +47,18 @@ class GamePad:
         """
         self.state_snapshot()
 
+    @property
+    def leftaxis(self):
+        v = self.state.sticks[0]
+        norm = np.linalg.norm(v)
+        #vdir = v/norm if norm > 0 else v
+        if norm < self.dead_zone_thresh:
+            norm = 0
+            vdir = Vector3((0,0,0))
+        else:
+            vdir = v/norm
+        return vdir, norm
+    
     def state_snapshot(self):
         c = self.controller
         self.state_history.appendleft(self.state)
@@ -58,16 +73,15 @@ class GamePad:
         s.dpup = c.dpup
         s.dpdown = c.dpdown
         s.sticks[0][0] = c.leftx
-        s.sticks[0][1] = c.lefty
+        s.sticks[0][2] = c.lefty
         s.sticks[1][0] = c.rightx
-        s.sticks[1][1] = c.righty
+        s.sticks[1][2] = c.righty
         #print(c.__dict__)
-        print(s)
+        #print(s)
 
 
 class GamePadManager:
     poll_rate = 1/60
-    dead_zone_thresh = 0.04 # magnitude under which to treat as zero
     controller_id = 0
     connected_pads = { } # id => GamePad
     max_players = 4
@@ -103,13 +117,9 @@ class GamePadManager:
         #pyglet.clock.schedule_interval(lambda dt: self.update_controller_state(controller), self.poll_rate)
         return pad
 
-    def disconnect_pad(self, controller):
+    def unregister_pad(self, controller):
         print(f"Controller disconnected: {controller.name}")
         del GamePadManager.connected_pads[controller._id]
-
-    def on_connect(self, controller):
-        """Handles controller connection."""
-        self.register_pad(controller)
 
     def register_pad(self, controller):
         pad = self.connect_pad(controller)
@@ -126,10 +136,13 @@ class GamePadManager:
         self.players[player_no] = pad
         self.game.cube.player = pad # TODO testing this side effect assignment here
 
+    def on_connect(self, controller):
+        """Handles controller connection."""
+        self.register_pad(controller)
 
-    def on_disconnect(controller):
+    def on_disconnect(self, controller):
         """Handles controller disconnection."""
-        self.disconnect_pad(controller)
+        self.unregister_pad(controller)
 
     def update(self, dt):
         # Poll Pyglet events

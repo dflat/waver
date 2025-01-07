@@ -18,6 +18,9 @@ class Color:
     LIGHTGREY = np.array([.9,.9,.9])
     WHITE = np.array([1,1,1])
 
+def project_onto_axis(a, v):
+	return np.dot(a,v)*a
+
 class Vec4:
 	def __init__(self, v=None):
 		self.v = np.array((0,0,0,1), dtype='f4') if v is None else numpy.array(v, dtype='f4')
@@ -25,6 +28,10 @@ class Vec4:
 class Mat4:
 	def __init__(self, m:np.ndarray):
 		self.m = m
+
+	@classmethod
+	def build_basis(cls, b1, b2, b3):
+		return np.stack((b1,b2,b3), axis=1) # treat b_i as column vectors
 
 	@classmethod
 	def build_frame(cls, up, forward, origin=(0,0,0)):
@@ -50,6 +57,7 @@ class Mat4:
 	    frame[:3,2] = forward
 	    frame[:3,3] = origin
 	    return frame
+
 
 
 	@classmethod

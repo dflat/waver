@@ -11,7 +11,7 @@ from scene_objects import SceneObject, Cube, Grid, Axes, SplineMesh
 from utils import Mat4, Color, clamp, rescale
 from camera import Camera
 from controllers.gamepad import GamePadManager
-
+from animation import Animation
 from pprint import pprint
 
 class Game(mglw.WindowConfig):
@@ -164,8 +164,14 @@ class Game(mglw.WindowConfig):
         # update miscelleneous uniforms
         self.program['time'].value = t
 
+        # step animations (todo: figure out where best to do this in control flow)
+        for anim in list(Animation.playing.values()):
+            anim.update(dt)
+
         # update view matrix
+        self.cam.handle_input(self.controls)
         self.cam.update(t, dt)
+
         view = self.cam.view
         self.program['view'].write(view.astype('f4'))#.tobytes())
 
@@ -192,7 +198,7 @@ class Game(mglw.WindowConfig):
 
         if self.t > 1: # debugging mouse poll rate
             self.t = 0
-            print('mouse drag events per second:', self.drags_per_second)
+            #print('mouse drag events per second:', self.drags_per_second)
             self.drags_per_second = 0
 
         self.update(time, frame_time)
