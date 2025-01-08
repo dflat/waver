@@ -14,9 +14,9 @@ class Camera:
         self.azimuth_lock = False
         self.radius = 6.0*1.5
         #self.elevation = 2
-        self.target = Vector3([0.0, 0.0, 0.0])
-        self.pos = Vector3([self.radius, 0.0, 0.0])
-        self.up = Vector3([0.0, 1.0, 0.0])
+        self.target = glm.vec4(0.0, 0.0, 0.0, 1.0)
+        self.pos = glm.vec4(self.radius, 0.0, 0.0, 1.0)
+        self.up = glm.vec3(0.0, 1.0, 0.0)
         self.view = self.get_view_matrix()
         self.track = True
         self.inverted_x_track = False # reverse the azimuth against target's x translation
@@ -25,7 +25,7 @@ class Camera:
         x = np.sin(v) * np.cos(u)
         z = np.sin(v) * np.sin(u)
         y = np.cos(v)
-        return r*Vector3([x,y,z])
+        return r*glm.vec4(x,y,z,0)
 
     def handle_input(self, controls):
         k = controls.keys 
@@ -68,17 +68,17 @@ class Camera:
 
     def get_forward(self):
         """
-        view is stored as inverse camera transform, and in row major order.
-        So world-space forward vector appears in the 3rd column.
+        view is stored as inverse camera transform, in column major order,
+        So world-space forward vector appears in the 3rd row.
         """
-        return np.array(self.view[:3, 2])
+        return glm.vec3(glm.row(self.view,2))
 
     @property
     def o(self):
-        return np.array(glm.affineInverse(self.view.T)) #np.linalg.inv(self.view.T)
+        return glm.affineInverse(self.view) 
     
     def get_view_matrix(self):
         """Calculates the view matrix for a camera orbiting the cube."""
-        return Matrix44.look_at(self.pos, self.target, self.up)
+        return glm.lookAtRH(self.pos.xyz, self.target.xyz, self.up)
 
 

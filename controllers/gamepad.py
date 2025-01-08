@@ -1,5 +1,6 @@
 import pyglet
-from pyrr import Vector3
+import glm
+from glm import vec3
 import numpy as np
 import time
 from copy import deepcopy
@@ -20,7 +21,7 @@ class GamePadState:
         self.b = False
         self.x = False
         self.y = False
-        self.sticks = [Vector3(), Vector3()]
+        self.sticks = [vec3(), vec3()]
         self.dpleft = False
         self.dpright = False
         self.dpup = False
@@ -50,11 +51,11 @@ class GamePad:
     @property
     def leftaxis(self):
         v = self.state.sticks[0]
-        norm = np.linalg.norm(v)
+        norm = glm.length(v)
         #vdir = v/norm if norm > 0 else v
         if norm < self.dead_zone_thresh:
             norm = 0
-            vdir = Vector3((0,0,0))
+            vdir = vec3()
         else:
             vdir = v/norm
         return vdir, norm

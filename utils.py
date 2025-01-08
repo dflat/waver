@@ -1,5 +1,6 @@
 import numpy as np
 import math
+import glm
 
 def rescale(x,mn=0,mx=1,a=0,b=1):
 	return a + (b-a)*(x - mn)/(mx-mn)
@@ -19,25 +20,17 @@ class Color:
     WHITE = np.array([1,1,1])
 
 def project_onto_axis(a, v):
-	return np.dot(a,v)*a
-
-class Vec4:
-	def __init__(self, v=None):
-		self.v = np.array((0,0,0,1), dtype='f4') if v is None else numpy.array(v, dtype='f4')
+	return glm.dot(a,v)*a
 
 class Mat4:
-	def __init__(self, m:np.ndarray):
-		self.m = m
-
 	@classmethod
 	def build_basis(cls, b1, b2, b3):
-		return np.stack((b1,b2,b3), axis=1) # treat b_i as column vectors
+		return glm.mat3(b1,b2,b3)
 
 	@classmethod
-	def from_basis(self, basis, origin=(0,0,0)):
-		frame = np.eye(4)
-		frame[:3,:3] = basis
-		frame[:3, 3] = origin
+	def from_basis(self, basis: glm.mat3, origin=(0,0,0)):
+		frame = glm.mat4(basis) 
+		frame[3] = glm.vec4(origin, 1)
 		return frame
 
 	@classmethod
@@ -50,33 +43,22 @@ class Mat4:
 	        up (np.ndarray): Unit vector pointing "up".
 	        forward (np.ndarray): Vector loosely in the "forward" direction.
 	    """
-	    forward /= np.linalg.norm(forward)
+	    forward = glm.normalize(forward)
 	    
-	    right = Mat4.cross(up, forward)
-	    right /= np.linalg.norm(right)
+	    right = glm.cross(up, forward)
+	    right = glm.normalize(right)
 	    
 	    # Compute the corrected forward vector (cross product of right and up)
-	    forward = Mat4.cross(right, up)
+	    forward = glm.cross(right, up)
 
-	    frame = Mat4.identity()
-	    frame[:3,0] = right
-	    frame[:3,1] = up
-	    frame[:3,2] = forward
-	    frame[:3,3] = origin
+	    frame = glm.mat4(glm.mat3(right,up,forward)) 
+	    frame[3].xyz = origin
+
 	    return frame
-
-
-
-	@classmethod
-	def make_aux(cls, R, T):
-		P = np.eye(4)
-		P[:3,:3] = R[:3,:3]
-		P[:3, 3] = T[:3, 3]
-		return P
 
 	@classmethod
 	def get_transform_in_basis(cls, M, A):
-		Ai = np.linalg.inv(A) # todo: use rigid_inverse flag?
+		Ai = glm.inverse(A) # todo: use rigid_inverse flag?
 		return A @ M @ Ai
 
 	@classmethod
@@ -86,63 +68,33 @@ class Mat4:
 		taking advantage of this simpler invertiblilty,
 		should be more numerically stable.
 		"""
-		P = np.eye(4)
-		RT = M[:3,:3].T
-		o = RT @ -M[:3,3]
-		P[:3,:3] = RT
-		P[:3,3] = o
-		return P
+		return glm.affineInverse(M)
 
 	@classmethod
 	def identity(cls):
-		return np.eye(4, dtype='f4')
+		return glm.mat4()
 
 	@classmethod
-	def make_rigid_frame_euler(cls, xtheta=0, ytheta=0, ztheta=0, origin=(0,0,0)):
-		R = Mat4.from_x_rotation(xtheta)
-		R = R @ Mat4.from_y_rotation(ytheta)
-		R = R @ Mat4.from_z_rotation(ztheta)
-		T = Mat4.from_translation(origin)
-		return T @ R 
+	def make_rigid_frame_euler(cls, xtheta=0, ytheta=0, ztheta=0, origin=glm.vec3()):
+		F = glm.mat4(glm.quat((xtheta, ytheta, ztheta)))
+		F[3] = glm.vec4(origin, 1)
+		return F
 
 	@classmethod
 	def from_translation(cls, v):
-		M = np.eye(4, dtype='f4')
-		M[:3, 3] = v
-		return M
+		return glm.translate(v)
 
 	@classmethod
 	def from_x_rotation(cls, theta):
-		M = np.eye(4)
-		c = math.cos(theta)
-		s = math.sin(theta)
-		M[1,1] = c
-		M[2,1] = s
-		M[1,2] = -s
-		M[2,2] = c
-		return M
+		return glm.rotate(theta, (1,0,0))
 
 	@classmethod
 	def from_y_rotation(cls, theta):
-		M = np.eye(4)
-		c = math.cos(theta)
-		s = math.sin(theta)
-		M[0,0] = c
-		M[2,0] = -s
-		M[0,2] = s
-		M[2,2] = c
-		return M
+		return glm.rotate(theta, (0,1,0))
 
 	@classmethod
 	def from_z_rotation(cls, theta):
-		M = np.eye(4)
-		c = math.cos(theta)
-		s = math.sin(theta)
-		M[0,0] = c
-		M[1,0] = s
-		M[0,1] = -s
-		M[1,1] = c
-		return M
+		return glm.rotate(theta, (0,0,1))
 
 	@classmethod
 	def axis_to_axis(cls, s, t):
@@ -151,30 +103,29 @@ class Mat4:
 		Original by Tomas, Hughes:
 			'Efficiently Building a Matrix to Rotate One Vector to Another'
 		"""
-		s /= np.linalg.norm(s)
-		t /= np.linalg.norm(t)
-		v = Mat4.cross(s,t)
-		e = np.dot(s,t)
+		s = glm.normalize(s)
+		t = glm.normalize(t)
+		v = glm.cross(s,t)
+		e = glm.dot(s,t)
 		h = 1/(1 + e)
-		M = np.eye(4)
+		M = glm.mat4() 
 		M[0,0] = e + h*v[0]**2
 		M[1,1] = e + h*v[1]**2
 		M[2,2] = e + h*v[2]**2
 		M[3,3] = 1 
 
-		M[0,1] = h*v[0]*v[1] - v[2]
-		M[0,2] = h*v[0]*v[2] + v[1]
+		M[1,0] = h*v[0]*v[1] - v[2]
+		M[2,0] = h*v[0]*v[2] + v[1]
 
-		M[1,0] = h*v[0]*v[1] + v[2]
-		M[1,2] = h*v[1]*v[2] - v[0]
+		M[0,1] = h*v[0]*v[1] + v[2]
+		M[2,1] = h*v[1]*v[2] - v[0]
 
-		M[2,0] = h*v[0]*v[2] - v[1]
-		M[2,1] = h*v[1]*v[2] + v[0]
+		M[0,2] = h*v[0]*v[2] - v[1]
+		M[1,2] = h*v[1]*v[2] + v[0]
 
-		return M
+		return M #glm.mat4(M)
+		return glm.mat4(glm.quat(s, t)) # faster: try this if surface normal issue TODO
 
 	@staticmethod
 	def cross(a,b):
-		x,y,z = a
-		p,q,r = b
-		return np.array((r*y - q*z, p*z - r*x, q*x - p*y))
+		return glm.cross(a,b)

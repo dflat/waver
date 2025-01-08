@@ -1,17 +1,20 @@
 import numpy as np
 import math
-from pyrr import Matrix44, Vector3, Quaternion
+from glm import vec3
+import glm
 import moderngl
 from utils import Color, rescale, Mat4, clamp, project_onto_axis
 from splines import Spline, SplinePatch, grid, wave_mesh
 import sys
 
+PI = glm.pi()
+
 class SceneObject:
     group = []
-    e1 = np.array([1,0,0], dtype='f4')
-    e2 = np.array([0,1,0], dtype='f4')
-    e3 = np.array([0,0,1], dtype='f4')
-    up = e2.copy()
+    e1 = vec3(1,0,0)
+    e2 = vec3(0,1,0)
+    e3 = vec3(0,0,1)
+    up = vec3(e2)
     data_format = '3f 3f'
     attribute_names = ['in_position', 'in_color']
 
@@ -26,8 +29,8 @@ class SceneObject:
 
         self._o = Mat4.make_rigid_frame_euler() if frame is None else frame
 
-        self.vel = Vector3()
-        self.acc = Vector3()
+        self.vel = glm.vec3()
+        self.acc = glm.vec3()
 
         self.mass = 1
         self.scale = 1
@@ -42,7 +45,7 @@ class SceneObject:
         self._o = value
     
     def get_axis(self, i):
-        return self.o[:3, i]
+        return self.o[i]
 
     def world_transform(self, T):
         """
@@ -65,36 +68,36 @@ class SceneObject:
         """
         M = Mat4.get_transform_in_basis(M, A)
         self.o = M @ self.o
-        #Ai = np.linalg.inv(A) # todo: use rigid_inverse
-        #ßself.o = A @ M @ Ai @ self.o
 
     def get_object_matrix(self):
         return self.o
 
     @property
-    def object_matrix_as_array(self):
-        return self.get_object_matrix().T.ravel()
+    def object_matrix_as_bytes(self):
+        return self.get_object_matrix().to_bytes()
 
     @property
-    def pos(self):
-        return self.o[:3,3]
+    def pos(self) -> glm.vec3:
+        return self.o[3]
 
     @pos.setter
     def pos(self, v):
-        self.o[:3,3] = v
+        self.o[3] = v
+        #self.o[3].xyz = v
 
     @property
     def R(self):
-        return self.o[:3,:3]
+        return glm.mat3(self.o)
 
     @R.setter
     def R(self, Rot3):
-        self.o[:3,:3] = Rot3
+        self.o[0].xyz = Rot3[0] 
+        self.o[1].xyz = Rot3[1] 
+        self.o[2].xyz = Rot3[2] 
     
     @property
     def up_normal(self):
-        return self.o[:3,1] # Y axis of local frame
-        #return np.array((0.,1.,0.)) #old way
+        return glm.vec3(self.o[1]) # Y axis of local frame
 
     def match_normals(self, other):
         R = Mat4.axis_to_axis(self.up_normal, other) # TODO multiply in, dont set?
@@ -152,8 +155,6 @@ class Cube(SceneObject):
     def rotate_about_local_up(self, theta):
         #self.transform(Mat4.from_y_rotation(theta))
         self.y_rot = Mat4.from_y_rotation(theta)
-        #Rup = Mat4.from_y_rotation(theta)
-        #self.R = (self.R @ Rup)# @ self.R.T) @ self.R
 
     def integrate(self,t,dt):
         # Update velocity with acceleration and apply frictional decay
@@ -162,13 +163,14 @@ class Cube(SceneObject):
         self.vel += net_acc * dt
 
         # Update position based on velocity
-        self.pos += self.vel * dt
+        self.pos.xyz += self.vel * dt
 
     def clamp_x_position_to_surface(self, surface: 'SplineMesh', i=0):
         hs = self.size/2
         xmin, xmax = surface.interval
         xmin += hs
         xmax -= hs
+        #print(xmin, xmax, self.pos)
         if self.pos[i] < xmin:
             self.pos[i] = xmin
             self.vel[i] = 0
@@ -206,7 +208,7 @@ class Cube(SceneObject):
             return 0
         cam_forward = self.game.cam.get_forward() 
         cam_forward_xz = cam_forward - project_onto_axis(self.up, cam_forward)
-        cam_forward_xz /= np.linalg.norm(cam_forward_xz)
+        cam_forward_xz = glm.normalize(cam_forward_xz)
         cam_right_xz = Mat4.cross(self.up, cam_forward_xz) #
 
         # basis in xz plane based on camera's forward direction
@@ -214,6 +216,7 @@ class Cube(SceneObject):
         cam_basis_xz = Mat4.build_basis(cam_right_xz, self.up, cam_forward_xz)
         cam_relative_vel = cam_basis_xz @ vdir
 
+        #print(cam_forward, cam_forward_xz, cam_right_xz, cam_relative_vel)
         #vcam = np.array(self.game.cam.view[:3,:3] @ vdir)
         #vcamxz = vcam - project_onto_axis(self.up, vcam)
         #assert np.allclose(cam_relative_vel, vcamxz)
@@ -232,7 +235,7 @@ class Cube(SceneObject):
 
         vdir = cam_relative_vel
         ##print(cam_forward_xz)
-        cos_angle = np.dot(cam_forward_xz, vdir)
+        cos_angle = glm.dot(cam_forward_xz, vdir)
         sin_angle = Mat4.cross(cam_forward_xz, vdir)[1]
         angle_of_divergence = math.atan2(sin_angle,cos_angle)
         self.rotate_about_local_up(angle_of_divergence)
@@ -244,8 +247,8 @@ class Cube(SceneObject):
     def update(self, t, dt):
         # parameters and constants (here for temporary conveinence)
         hz = 1/4
-        w = 2*np.pi*hz
-        r = 1.5 + np.cos(w*t/2)
+        w = 2*PI*hz
+        r = 1.5 + glm.cos(w*t/2)
         decay_rate = 0.9
         g = 9.8
 
@@ -254,24 +257,18 @@ class Cube(SceneObject):
             vdir, norm = self.player.leftaxis
 
             if dpad:
-            #    vdir = Vector3()
                 if self.player.state.dpright or self.game.controls.right:
-                    print('got right')
                     vdir[0] += 1
-                    norm = np.linalg.norm(vdir)
-                    #self.vel[0] += self.maxvel 
+                    norm = glm.length(vdir)
                 if self.player.state.dpleft or self.game.controls.left:
                     vdir[0] -= 1
-                    norm = np.linalg.norm(vdir)
-                    #self.vel[0] -= self.maxvel 
+                    norm = glm.length(vdir)
                 if self.player.state.dpup or self.game.controls.up:
                     vdir[2] -= 1
-                    norm = np.linalg.norm(vdir)
-                    #self.vel[2] -= self.maxvel 
+                    norm = glm.length(vdir)
                 if self.player.state.dpdown or self.game.controls.down:
                     vdir[2] += 1
-                    #self.vel[2] += self.maxvel 
-                    norm = np.linalg.norm(vdir)
+                    norm = glm.length(vdir)
 
             # handle player's looking direction
             # match to velocity direction
@@ -279,9 +276,9 @@ class Cube(SceneObject):
             vdir = self.get_angular_veloctiy(vdir, norm)
 
             self.vel += vdir*norm*self.maxvel
-            speed = np.linalg.norm(self.vel)
+            speed = glm.length(self.vel)
             if speed > self.maxspeed:
-                v = self.vel.normalized
+                v = glm.normalize(self.vel)
                 self.vel = v*self.maxspeed
 
 
@@ -324,17 +321,17 @@ class Cube(SceneObject):
 
 
     def stick_to_surface(self, surface: 'SplineMesh'):
-        x,y,z = self.pos
+        x,y,z = self.pos.xyz
 
         surface_point = surface.get_point(x,z)
-        surface_normal = surface.get_normal(x,z)
+        surface_normal = glm.vec3(surface.get_normal(x,z))
         #print(surface_normal)
 
-        self.ground_point = Vector3(surface_point) #+ Vector3((0,self.size/2 + 0.005,0))
+        self.ground_point = glm.vec3(surface_point) #+ Vector3((0,self.size/2 + 0.005,0))
         #self.ground_point = Vector3(surface_point) + surface_normal#+ (self.size/2 + 0.005)*surface_normal
         #self.pos = self.ground_point.copy()
         #self.transform(Mat4.from_translation(surface_normal))
-        self.hover_offset[1, 3] = self.size/2 + 0.005
+        self.hover_offset[3, 1] = self.size/2 + 0.005
 
 
         # trying out direct frame building instead of rotating to match normal
@@ -389,7 +386,7 @@ class Cube(SceneObject):
 
 
 class SplineMesh(SceneObject):
-    def __init__(self, game, interval=(0,3), n_samps=11, origin=np.array([0,0,0], dtype='f4')):
+    def __init__(self, game, interval=(0,3), n_samps=11, origin=glm.vec3()):
         self.origin = origin
         self.interval = interval
         self.n_samps = n_samps
@@ -524,7 +521,7 @@ class Axes(SceneObject):
 
     @property
     def origin(self):
-        return self.pos
+        return glm.vec3(self.pos)
 
     def update(self, t, dt):
         if self.parent:

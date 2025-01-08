@@ -2,8 +2,9 @@ import moderngl
 import threading
 import pyglet
 import numpy as np
+import glm
 import math
-from pyrr import Matrix44, Vector3
+from pyrr import Matrix44 
 import moderngl_window as mglw
 from pathlib import Path
 from splines import Spline, SplinePatch, grid, wave_mesh
@@ -13,6 +14,8 @@ from camera import Camera
 from controllers.gamepad import GamePadManager
 from animation import Animation
 from pprint import pprint
+
+PI = glm.pi()
 
 class Game(mglw.WindowConfig):
     gl_version = (3, 3)
@@ -113,7 +116,7 @@ class Game(mglw.WindowConfig):
         self.use_perspective = True
 
         self.cam = Camera(self)
-        self.camAxes = Axes(self, parent=self.cam, aux_origin=(0,2,0), size=1)
+        self.camAxes = Axes(self, parent=self.cam, aux_origin=glm.vec4(0,2,0,1), size=1)
 
         self.controls = Controls(self)
         self.pad_manager = GamePadManager(self)
@@ -176,7 +179,7 @@ class Game(mglw.WindowConfig):
         self.cam.update(t, dt)
 
         view = self.cam.view
-        self.program['view'].write(view.astype('f4'))#.tobytes())
+        self.program['view'].write(view.to_bytes())#.astype('f4'))#.tobytes())
 
         # update projection matrix
         projection = self.perspective_projection if self.use_perspective else self.orthographic_projection
@@ -192,14 +195,13 @@ class Game(mglw.WindowConfig):
 
         # draw objects
         for obj in SceneObject.group:
-            self.program['model'].write(obj.object_matrix_as_array.astype('f4'))#.tobytes())
+            self.program['model'].write(obj.object_matrix_as_bytes)#.tobytes())
             obj.render()
 
     def render(self, time, frame_time):
         self.dt = frame_time
         self.t += frame_time
 
-        #np.linalg.inv(np.eye(4)*2)
         if self.t > 1: # debugging mouse poll rate
             self.t = 0
             #print('mouse drag events per second:', self.drags_per_second)
@@ -221,7 +223,7 @@ class Game(mglw.WindowConfig):
         dx = dx*radPerSec/2
         self.cam.azimuth += dx*.5
         dy = dy*radPerSec
-        self.cam.altitude = clamp(self.cam.altitude - dy*.25, .1, np.pi/2)
+        self.cam.altitude = clamp(self.cam.altitude - dy*.25, .1, PI/2)
 
     def mouse_scroll_event(self, dx,dy):
     #def mouse_position_event(self, x, y, dx, dy): 
@@ -253,7 +255,7 @@ class Controls:
         self.keys = self.game.wnd.keys
         self.pressed = {}
         self.just_pressed = {}
-        self.cursor = np.array((0,0), dtype='f4')
+        self.cursor = glm.vec2()
 
     @property
     def left(self):
