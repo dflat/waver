@@ -59,9 +59,19 @@ class GamePad:
             vdir = v/norm
         return vdir, norm
     
+    def just_pressed(self, button: str):
+        """
+        Assumes self.update has already been called this frame
+        """
+        try:
+            prev_state = self.state_history[0]
+        except IndexError:
+            return False
+        return getattr(self.state, button) and not getattr(prev_state, button)
+
     def state_snapshot(self):
         c = self.controller
-        self.state_history.appendleft(self.state)
+        self.state_history.appendleft(self.state) # push last frame's state
         self.state = GamePadState()
         s = self.state
         s.a = c.a
@@ -120,6 +130,7 @@ class GamePadManager:
     def unregister_pad(self, controller):
         print(f"Controller disconnected: {controller.name}")
         del GamePadManager.connected_pads[controller._id]
+        self.game.cube.unlink_gamepad()
 
     def register_pad(self, controller):
         pad = self.connect_pad(controller)
@@ -134,7 +145,7 @@ class GamePadManager:
             player_no += 1
         pad.player_no = player_no
         self.players[player_no] = pad
-        self.game.cube.player = pad # TODO testing this side effect assignment here
+        self.game.cube.link_to_gamepad(pad) # TODO testing this side effect assignment here
 
     def on_connect(self, controller):
         """Handles controller connection."""

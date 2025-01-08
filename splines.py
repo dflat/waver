@@ -1,7 +1,17 @@
 from pyrr import Matrix44, Vector3
 import numpy as np
+from utils import Mat4
 
 Bernstein = Matrix44([[1,-3,3,-1],[0,3,-6,3],[0,0,3,-3],[0,0,0,1]])
+
+def bez(a,b,c,d):
+    """
+    Basic 1D spline.
+    """
+    def f(t):
+        s = 1 - t
+        return a*s**3 + b*3*t*s**2 + c*3*t**2*s + d*t**3
+    return f
 
 class Spline:
     Bernstein = Bernstein
@@ -74,7 +84,7 @@ class SplinePatch:
         dV = np.array((0, 1, 2*v, 3*v*v))
         Tu = Vector3(np.array( (V.T @ self.GB @ dU) ))  
         Tv = Vector3(np.array( (dV.T @ self.GB @ U) ))  
-        normal = np.cross(Tv.normalized, Tu.normalized)
+        normal = Mat4.cross(Tv.normalized, Tu.normalized)
         return Vector3(normal).normalized
 
     def eval_vec(self, u_samples, v_samples=None):
@@ -116,25 +126,3 @@ def test(n=11):
     ts = np.linspace(0,1,n)
     return sp
     return sp.eval_vec(ts)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

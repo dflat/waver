@@ -176,6 +176,12 @@ class Cube(SceneObject):
             self.pos[i] = xmax
             self.vel[i] = 0
 
+    def link_to_gamepad(self, pad):
+        self.player = pad
+
+    def unlink_gamepad(self):
+        self.player = None
+
     def handle_input(self, controls):
         k = controls.keys 
         dv = 0.25
@@ -201,7 +207,7 @@ class Cube(SceneObject):
         cam_forward = self.game.cam.get_forward() 
         cam_forward_xz = cam_forward - project_onto_axis(self.up, cam_forward)
         cam_forward_xz /= np.linalg.norm(cam_forward_xz)
-        cam_right_xz = np.cross(self.up, cam_forward_xz) #
+        cam_right_xz = Mat4.cross(self.up, cam_forward_xz) #
 
         # basis in xz plane based on camera's forward direction
         # used to take combinations by input vector for camera-relative control
@@ -215,6 +221,7 @@ class Cube(SceneObject):
         #vcamxz /= np.linalg.norm(vcamxz)
         #cam_relative_vel = vcamxz
         # note: cam_relative_vel seems more correct than vcamxz
+        self.game.camxzAxes.o = Mat4.from_basis(cam_basis_xz, origin=(0,1,0))
 
 
 
@@ -223,10 +230,10 @@ class Cube(SceneObject):
         #print('input vel:', np.round(vdir,2), end=' -- ')
         #print('cam rel vel:', np.round(cam_relative_vel,2))
 
-
+        vdir = cam_relative_vel
         ##print(cam_forward_xz)
         cos_angle = np.dot(cam_forward_xz, vdir)
-        sin_angle = np.cross(cam_forward_xz, vdir)[1]
+        sin_angle = Mat4.cross(cam_forward_xz, vdir)[1]
         angle_of_divergence = math.atan2(sin_angle,cos_angle)
         self.rotate_about_local_up(angle_of_divergence)
         #print(f"angle: {angle_of_divergence:.1f}")
@@ -248,19 +255,20 @@ class Cube(SceneObject):
 
             if dpad:
             #    vdir = Vector3()
-                if self.player.state.dpright:
+                if self.player.state.dpright or self.game.controls.right:
+                    print('got right')
                     vdir[0] += 1
                     norm = np.linalg.norm(vdir)
                     #self.vel[0] += self.maxvel 
-                if self.player.state.dpleft:
+                if self.player.state.dpleft or self.game.controls.left:
                     vdir[0] -= 1
                     norm = np.linalg.norm(vdir)
                     #self.vel[0] -= self.maxvel 
-                if self.player.state.dpup:
+                if self.player.state.dpup or self.game.controls.up:
                     vdir[2] -= 1
                     norm = np.linalg.norm(vdir)
                     #self.vel[2] -= self.maxvel 
-                if self.player.state.dpdown:
+                if self.player.state.dpdown or self.game.controls.down:
                     vdir[2] += 1
                     #self.vel[2] += self.maxvel 
                     norm = np.linalg.norm(vdir)
@@ -278,6 +286,7 @@ class Cube(SceneObject):
 
 
 
+        old="""
         # check for controller input
         if self.game.controls.right:
             self.vel[0] += self.maxvel 
@@ -287,6 +296,7 @@ class Cube(SceneObject):
             self.vel[2] -= self.maxvel 
         if self.game.controls.down:
             self.vel[2] += self.maxvel 
+            """
 
         # jumping logic (hack for now)
         if not self.jumping and self.game.controls.space:
@@ -505,9 +515,10 @@ class Grid(SceneObject):
 
 
 class Axes(SceneObject):
-    def __init__(self, game, parent=None, frame=None, size=5):
+    def __init__(self, game, parent=None, frame=None, size=5, aux_origin=None):
         self.size = size
         self.parent = parent
+        self.aux_origin = aux_origin
         super().__init__(game, frame)
         self.render_mode = moderngl.LINES
 
@@ -518,6 +529,8 @@ class Axes(SceneObject):
     def update(self, t, dt):
         if self.parent:
             self.o = self.parent.o
+        if self.aux_origin is not None:
+            self.pos = self.aux_origin
 
     def load_mesh(self):
         o = self.origin

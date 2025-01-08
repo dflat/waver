@@ -34,6 +34,13 @@ class Mat4:
 		return np.stack((b1,b2,b3), axis=1) # treat b_i as column vectors
 
 	@classmethod
+	def from_basis(self, basis, origin=(0,0,0)):
+		frame = np.eye(4)
+		frame[:3,:3] = basis
+		frame[:3, 3] = origin
+		return frame
+
+	@classmethod
 	def build_frame(cls, up, forward, origin=(0,0,0)):
 	    """
 	    Construct a right-handed 3D orthonormal basis given a unit "up" vector
@@ -45,11 +52,11 @@ class Mat4:
 	    """
 	    forward /= np.linalg.norm(forward)
 	    
-	    right = np.cross(up, forward)
+	    right = Mat4.cross(up, forward)
 	    right /= np.linalg.norm(right)
 	    
 	    # Compute the corrected forward vector (cross product of right and up)
-	    forward = np.cross(right, up)
+	    forward = Mat4.cross(right, up)
 
 	    frame = Mat4.identity()
 	    frame[:3,0] = right
@@ -146,7 +153,7 @@ class Mat4:
 		"""
 		s /= np.linalg.norm(s)
 		t /= np.linalg.norm(t)
-		v = np.cross(s,t)
+		v = Mat4.cross(s,t)
 		e = np.dot(s,t)
 		h = 1/(1 + e)
 		M = np.eye(4)
@@ -165,3 +172,9 @@ class Mat4:
 		M[2,1] = h*v[1]*v[2] + v[0]
 
 		return M
+
+	@staticmethod
+	def cross(a,b):
+		x,y,z = a
+		p,q,r = b
+		return np.array((r*y - q*z, p*z - r*x, q*x - p*y))

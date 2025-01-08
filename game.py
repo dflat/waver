@@ -99,6 +99,7 @@ class Game(mglw.WindowConfig):
         self.cube = Cube(self, size=cube_size)
         self.cube_frame = Axes(self, parent=self.cube, size=1)
         self.axes = Axes(self, frame=self.world, size=5)
+        self.camxzAxes = Axes(self, frame=self.world, size=1)
         #self.grid = Grid(self, unit=cube_size)
         self.patch = SplineMesh(self, interval=(-3,3), n_samps=22*2)
 
@@ -112,6 +113,8 @@ class Game(mglw.WindowConfig):
         self.use_perspective = True
 
         self.cam = Camera(self)
+        self.camAxes = Axes(self, parent=self.cam, aux_origin=(0,2,0), size=1)
+
         self.controls = Controls(self)
         self.pad_manager = GamePadManager(self)
 
@@ -196,6 +199,7 @@ class Game(mglw.WindowConfig):
         self.dt = frame_time
         self.t += frame_time
 
+        #np.linalg.inv(np.eye(4)*2)
         if self.t > 1: # debugging mouse poll rate
             self.t = 0
             #print('mouse drag events per second:', self.drags_per_second)

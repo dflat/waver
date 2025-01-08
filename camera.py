@@ -1,13 +1,14 @@
 import numpy as np
 from pyrr import Matrix44, Vector3
 import math
-from animation import Animation
+from animation import Animation, Interpolant
+import glm
 
 class Camera:
     def __init__(self, game):
         self.game = game
-        self.azimuth = math.pi/4 # looking down center of +xz
-        self.altitude = math.pi/2*0.65 # Level with xz-plane
+        self.azimuth = 0*math.pi/4 # looking down center of +xz
+        self.altitude = math.pi/2*0.65 
         self.dtheta = 0.00025*10
         self.spin = False
         self.azimuth_lock = False
@@ -28,8 +29,14 @@ class Camera:
 
     def handle_input(self, controls):
         k = controls.keys 
-        if controls.was_just_pressed(k.SPACE):
-            anim = Animation(obj=self, property='azimuth', deltaval=math.pi/2, dur=1)
+        player = self.game.cube.player
+        if (player and player.just_pressed('a')) or controls.was_just_pressed(k.SPACE):
+            anim = Animation(obj=self, property='azimuth', deltaval=-math.pi/2, dur=0.5,
+                interpolant=Interpolant.quintic, channel=1)
+            anim.start()
+        elif player and player.just_pressed('x'):
+            anim = Animation(obj=self, property='azimuth', deltaval=math.pi/2, dur=0.5,
+                interpolant=Interpolant.quintic, channel=1)
             anim.start()
 
     def update(self, t, dt):
@@ -66,6 +73,10 @@ class Camera:
         """
         return np.array(self.view[:3, 2])
 
+    @property
+    def o(self):
+        return np.array(glm.affineInverse(self.view.T)) #np.linalg.inv(self.view.T)
+    
     def get_view_matrix(self):
         """Calculates the view matrix for a camera orbiting the cube."""
         return Matrix44.look_at(self.pos, self.target, self.up)

@@ -1,5 +1,7 @@
 import time
 from utils import clamp, rescale
+from splines import bez
+from collections import defaultdict
 
 class Interpolant:
 	@classmethod
@@ -8,10 +10,38 @@ class Interpolant:
 			return a + t*(b-a) 
 		return f
 
+	@classmethod
+	def smoothstep(cls, a, b):
+		def s(t):
+			return 3*t*t - 2*t**3 
+		def f(t):
+			return a + s(t)*(b-a)
+		return f
+
+	@classmethod
+	def quintic(cls, a, b):
+		def q(t):
+			return 35*t**4 - 84*t**5 + 70*t**6 - 20*t**7
+			return 6 * t**5 - 15 * t**4 + 10 * t**3
+		def f(t):
+			return a + q(t)*(b-a)
+		return f
+
+	@classmethod
+	def overshoot(cls, a, b):
+		P = (0,0,-0.4,1)
+		P = (0,0.5,-0.3,1)
+		p = bez(*P)
+		def f(t):
+			return a + p(t)*(b-a)
+		return f
+
 class Animation:
 	_id = 0
 	playing = { }
 	finished = { }
+	channels = defaultdict(list)
+
 	def __init__(self, obj:'SceneObject', 
 						property=None,
 						startval=None,
@@ -23,7 +53,9 @@ class Animation:
 						startup_func=None,
 						teardown_func=None,
 						on_cancel=None,
-						interruptable=True):
+						interruptable=True,
+						channel=None,
+						drop_if_busy=True):
 		"""
 		args:
 			obj: SceneObject, reference to object to be animated
@@ -53,6 +85,8 @@ class Animation:
 		self.on_cancel = on_cancel
 
 		self.interruptable = interruptable
+		self.channel = channel
+		self.drop_if_busy = drop_if_busy
 
 		self._running = False
 		self.elapsed = 0
@@ -63,11 +97,13 @@ class Animation:
 			self.startval = getattr(self.obj, self.property)
 			self.endval = self.startval + self.deltaval
 		if self.interpolant is None:
-			assert self.startval and self.endval and self.property
+			assert self.startval is not None and self.endval is not None and self.property
 			self.interpolant = Interpolant.linear(self.startval, self.endval)
+		else:
+			self.interpolant = self.interpolant(self.startval, self.endval)
 		if self.update_func is None:
 			# default update func for simple single-valued interpolations of floats.
-			assert self.startval and self.endval and self.property
+			assert self.startval is not None and self.endval is not None and self.property
 			self.update_func = _default_update_func
 
 	def start(self):
@@ -76,6 +112,13 @@ class Animation:
 		self.elapsed = 0
 		self.value = self.startval
 		Animation.playing[self._id] = self
+
+		if self.channel:
+			if self.drop_if_busy:
+				if len(Animation.channels[self.channel]) > 0:
+					return self.cancel()
+			Animation.channels[self.channel].append(self)
+
 		self.startup()
 		print(f'animation {self._id} started.')
 
@@ -84,12 +127,21 @@ class Animation:
 			raise RuntimeError(f'Cannot interrupt this animation, id:{self._id}')
 		if self.on_cancel:
 			self.on_cancel()
+		self.remove()
+		print(f'animation {self._id} cancelled.')
+
+	def remove(self):
 		self._running = False
+		Animation.playing.pop(self._id)
+		if self.channel:
+			try:
+				Animation.channels[self.channel].remove(self) # TODO: Fix this...
+			except ValueError:
+				pass
 
 	def update(self, dt):
 		if self._running:
 			self.elapsed += dt
-			#elapsed = t - self.t0 # time since start
 			s = clamp(self.elapsed/self.dur) # Normalized progress
 			self.value = self.interpolant(s)
 			self.update_func(s, self.obj, self)
@@ -106,8 +158,7 @@ class Animation:
 	def finish(self):
 		if self.teardown_func:
 			self.teardown_func()
-		self._running = False
-		Animation.playing.pop(self._id)
+		self.remove()
 		Animation.finished[self._id] = self
 		print(f'animation {self._id} finished.')
 		return True
