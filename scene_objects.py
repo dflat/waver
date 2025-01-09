@@ -47,6 +47,9 @@ class SceneObject:
     def get_axis(self, i):
         return self.o[i]
 
+    def get_forward(self):
+        return self.get_axis(2)
+
     def world_transform(self, T):
         """
         Transform local object frame with T,
@@ -71,6 +74,11 @@ class SceneObject:
 
     def get_object_matrix(self):
         return self.o
+
+    def set_basis(self, b1, b2, b3):
+        self.o[0].xyz = b1.xyz
+        self.o[1].xyz = b2.xyz
+        self.o[2].xyz = b3.xyz
 
     @property
     def object_matrix_as_bytes(self):
@@ -138,6 +146,7 @@ class Cube(SceneObject):
         self.friction_coefficient = 4.75 # ~4 for 'ice', ~8 for quick stop
         self.mass = 1
         self.y_rot = Mat4.identity()
+        self.dir_rot = Mat4.identity()
         self.hover_offset = Mat4.identity()
         self.player = None
         super().__init__(game)
@@ -199,14 +208,17 @@ class Cube(SceneObject):
         if (oldvel, oldfric) != (self.maxvel, self.friction_coefficient):
             print('vel:', self.maxvel, 'fric:', self.friction_coefficient)
 
-    def get_angular_veloctiy(self, vdir, norm):
+    def get_cam_relative_velocity(self, vdir, norm):
         # vdir is the direction of linear velocity from 
         # user input. Calculate rotation by projecting
         # into null space of world up vector
 
-        if norm < .25:
-            return 0
-        cam_forward = self.game.cam.get_forward() 
+        # WANT: orientation to track linear velocity's (in cam space) direction
+        # this direction is calculated and called 'cam_relative_vel'
+
+        #if norm < .25:
+        #    return 0
+        cam_forward = self.game.cam.get_forward() # World(cam_z) (out from monitor)
         cam_forward_xz = cam_forward - project_onto_axis(self.up, cam_forward)
         cam_forward_xz = glm.normalize(cam_forward_xz)
         cam_right_xz = Mat4.cross(self.up, cam_forward_xz) #
@@ -227,18 +239,21 @@ class Cube(SceneObject):
         self.game.camxzAxes.o = Mat4.from_basis(cam_basis_xz, origin=(0,1,0))
 
 
+        if norm < .25:
+            return glm.vec3(0)
 
         #print('cam forward:', np.round(cam_forward_xz,2), end=' -- ')
         #print('cam right:', np.round(cam_right_xz,2), end=' -- ')
         #print('input vel:', np.round(vdir,2), end=' -- ')
         #print('cam rel vel:', np.round(cam_relative_vel,2))
 
-        vdir = cam_relative_vel
+
+        # old way
         ##print(cam_forward_xz)
-        cos_angle = glm.dot(cam_forward_xz, vdir)
-        sin_angle = Mat4.cross(cam_forward_xz, vdir)[1]
+        cos_angle = glm.dot(cam_forward_xz, cam_relative_vel)
+        sin_angle = Mat4.cross(cam_forward_xz, cam_relative_vel)[1]
         angle_of_divergence = math.atan2(sin_angle,cos_angle)
-        self.rotate_about_local_up(angle_of_divergence)
+        #self.rotate_about_local_up(angle_of_divergence)
         #print(f"angle: {angle_of_divergence:.1f}")
 
         return cam_relative_vel
@@ -252,11 +267,11 @@ class Cube(SceneObject):
         decay_rate = 0.9
         g = 9.8
 
-        dpad = True
+        dpadEnabled = True
         if self.player:
-            vdir, norm = self.player.leftaxis
+            vdir, norm = self.player.leftaxis #TODO should vdir be normalized here
 
-            if dpad:
+            if dpadEnabled:
                 if self.player.state.dpright or self.game.controls.right:
                     vdir[0] += 1
                     norm = glm.length(vdir)
@@ -273,7 +288,8 @@ class Cube(SceneObject):
             # handle player's looking direction
             # match to velocity direction
 
-            vdir = self.get_angular_veloctiy(vdir, norm)
+            # vdir is now cam relative velocity direction
+            vdir = self.get_cam_relative_velocity(vdir, norm)
 
             self.vel += vdir*norm*self.maxvel
             speed = glm.length(self.vel)
@@ -311,30 +327,87 @@ class Cube(SceneObject):
         self.clamp_x_position_to_surface(self.game.patch, i=2)
 
         # constrain avatar to surface
-        self.stick_to_surface(self.game.patch)
+        self.stick_to_surface3(self.game.patch)
 
+        # rotate cube's object matrix to match cam_rel_vel
+        # after stick to surface forward is 'undefined' and not useful,
+        # calculated as an artifact based on the geometry of the surface
+        # it is moving upon
+
+        if self.player and False:
+            if glm.length(vdir) > 0:
+                vdir = glm.normalize(vdir).xyz
+                f = self.get_forward().xyz
+                f = glm.normalize(vec3(f.x,0,f.z))
+                print(vdir, f)
+                q = glm.quat(f, vdir)
+                R = glm.mat4(q) # rotation 
+                #self.transform(R)
+                #print(R, glm.length(q))
+                #self.y_rot=R
+                #self.dir_rot = R
+                #self.transform(glm.mat4(2,2,2,1))
+
+        #self.transform(self.dir_rot)
         #self.transform(Mat4.from_translation((0.0,0.25*dt,0.0)))
 
         #self.forward_offset_angle = self.game.controls.cursor[0]*(-math.pi/2)#w*dt*3
         #self.rotate_about_local_up(self.forward_offset_angle) #TODO fix for new frame system
 
 
+    def stick_to_surface3(self, surface:'SplineMesh'):
+        x,y,z = self.pos.xyz
+        surface_point = glm.vec3(surface.get_point(x,z))
+        surface_normal = glm.vec3(surface.get_normal(x,z))
+
+        #deltaPos = surface_point - self.pos.xyz
+        #print('deltaPos:', deltaPos)
+        #deltaTrans = glm.translate(deltaPos)
+        #self.pos.xyz += deltaPos
+
+        self.hover_offset[3, 1] = self.size/2 + 0.005*10 # applied at end of frame
+        #self.hover_offset[3].xyz = surface_normal*(self.size/2 + 0.005)
+
+        # set rotation basis to match surface normal and velocity direction
+        b2 = surface_normal
+        vnorm = glm.length(self.vel)
+        b3 = self.vel/vnorm if vnorm > 0 else self.get_forward().xyz
+        #b1 = glm.cross(b2, b3)
+        #print(glm.length(b1), glm.length(b2), glm.length(b3), glm.dot(b1,b2), glm.dot(b1,b3), glm.dot(b2,b3))
+
+        #self.set_basis(b1, b2, b3)
+        self.o = Mat4.build_frame(up=b2, forward=b3, origin=surface_point)
+
+        #R = Mat4.axis_to_axis(self.up_normal, surface_normal)
+        #self.transform(deltaTrans*R) # TODO offset here (with frame up_normal) (instead of world)
+
+    def stick_to_surface2(self, surface:'SplineMesh'):
+        x,y,z = self.pos.xyz
+        surface_point = glm.vec3(surface.get_point(x,z))
+        surface_normal = glm.vec3(surface.get_normal(x,z))
+
+        deltaPos = surface_point - self.pos.xyz
+        print('deltaPos:', deltaPos)
+        deltaTrans = glm.translate(deltaPos)
+        self.hover_offset[3, 1] = self.size/2 + 0.005*10 # applied at end of frame
+        R = Mat4.axis_to_axis(self.up_normal, surface_normal)
+        self.transform(deltaTrans*R) # TODO offset here (with frame up_normal) (instead of world)
 
     def stick_to_surface(self, surface: 'SplineMesh'):
         x,y,z = self.pos.xyz
 
-        surface_point = surface.get_point(x,z)
+        surface_point = glm.vec3(surface.get_point(x,z))
         surface_normal = glm.vec3(surface.get_normal(x,z))
         #print(surface_normal)
 
-        self.ground_point = glm.vec3(surface_point) #+ Vector3((0,self.size/2 + 0.005,0))
-        #self.ground_point = Vector3(surface_point) + surface_normal#+ (self.size/2 + 0.005)*surface_normal
+        self.ground_point = surface_point
         #self.pos = self.ground_point.copy()
         #self.transform(Mat4.from_translation(surface_normal))
-        self.hover_offset[3, 1] = self.size/2 + 0.005
+        self.hover_offset[3, 1] = self.size/2 + 0.005*10
 
 
         # trying out direct frame building instead of rotating to match normal
+        # this forces a forward direction, and gets rid of stability issues/wobble
         forward = self.e3
         self.o = Mat4.build_frame(up=surface_normal, forward=forward, origin=self.ground_point)
         #print('before', self.pos)
@@ -433,7 +506,7 @@ class SplineMesh(SceneObject):
         """
         # Prepare indices and colors
 
-        wm = wave_mesh(*self.interval, 4, A=0) # 4 x 4 grid over interval
+        wm = wave_mesh(*self.interval, 4, A=1) # 4 x 4 grid over interval
         sp = SplinePatch(wm)
         self.patch = sp
         ts = np.linspace(0,1,self.n_samps)

@@ -1,4 +1,5 @@
 from pyrr import Matrix44, Vector3
+import glm
 import numpy as np
 from utils import Mat4
 
@@ -73,19 +74,20 @@ class SplinePatch:
         """
         U = np.array((1, u, u*u, u**3))
         V = np.array((1, v, v*v, v**3))
-        #return U, self.GB, V
+        P = V.T @ self.GB @ U
+        #print('P eval:', type(P))
+        return P
         # todo: why did U and V flipped here work
-        return Vector3(np.array( (V.T @ self.GB @ U) )) 
 
     def get_normal(self, u, v):
         U = np.array((1, u, u*u, u**3))
         V = np.array((1, v, v*v, v**3))
         dU = np.array((0, 1, 2*u, 3*u*u))
         dV = np.array((0, 1, 2*v, 3*v*v))
-        Tu = Vector3(np.array( (V.T @ self.GB @ dU) ))  
-        Tv = Vector3(np.array( (dV.T @ self.GB @ U) ))  
-        normal = Mat4.cross(Tv.normalized, Tu.normalized)
-        return Vector3(normal).normalized
+        Tu = glm.vec3(V.T @ self.GB @ dU)
+        Tv = glm.vec3(dV.T @ self.GB @ U)
+        normal = Mat4.cross(glm.normalize(Tv), glm.normalize(Tu))
+        return normal 
 
     def eval_vec(self, u_samples, v_samples=None):
         if v_samples is None:
@@ -102,11 +104,10 @@ def wave_mesh(start=0, end=3, n=4, A=1):
     """
     I = (start, end)
     size = end-start
-    X, Y = grid(I, I, n, n)
+    X, Z = grid(I, I, n, n)
     B = np.ones_like(X)
-    Z = wave2D(X,Y, xfreq=1/size, yfreq=1/size, A=A)
-    #return np.array([Y, Z, X]) # TODO FIX THIS was X,Z,Y, but axis were reversed??
-    return np.array([X, Z, Y]) # TODO FIX THIS was X,Z,Y, but axis were reversed??
+    Y = wave2D(X,Z, xfreq=1/size, yfreq=1/size, A=A)
+    return np.array([X, Y, Z]) 
 
 def wave2D(X, Y, xfreq=1/3, yfreq=1/3, A=0.5):
     wx = 2*np.pi*xfreq

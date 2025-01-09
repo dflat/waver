@@ -123,7 +123,7 @@ class Mat4:
 		M[0,2] = h*v[0]*v[2] - v[1]
 		M[1,2] = h*v[1]*v[2] + v[0]
 
-		return M #glm.mat4(M)
+		#return M #glm.mat4(M)
 		return glm.mat4(glm.quat(s, t)) # faster: try this if surface normal issue TODO
 
 	@staticmethod
