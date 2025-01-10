@@ -291,6 +291,7 @@ class Controls:
     def update(self, t, dt):
         K = self.keys
         if self.was_just_pressed(K.T):
+            print('tracking toggled.')
             self.game.cam.track = not self.game.cam.track
 
 

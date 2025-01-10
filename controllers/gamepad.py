@@ -70,6 +70,17 @@ class GamePad:
             return False
         return getattr(self.state, button) and not getattr(prev_state, button)
 
+    def _tossed_stick(self, index, direction, thresh=0.9):
+        v = self.state.sticks[index]
+        mag = glm.dot(v, direction)
+        return mag > thresh
+
+    def tossed_right_stick_left(self):
+        return self._tossed_stick(index=1, direction=glm.vec3(-1,0,0))
+
+    def tossed_right_stick_right(self):
+        return self._tossed_stick(index=1, direction=glm.vec3(1,0,0))
+
     def state_snapshot(self):
         c = self.controller
         self.state_history.appendleft(self.state) # push last frame's state

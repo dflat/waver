@@ -30,14 +30,17 @@ class Camera:
     def handle_input(self, controls):
         k = controls.keys 
         player = self.game.cube.player
-        if (player and player.just_pressed('a')) or controls.was_just_pressed(k.SPACE):
-            anim = Animation(obj=self, property='azimuth', deltaval=-math.pi/2, dur=0.5,
-                interpolant=Interpolant.quintic, channel=1)
-            anim.start()
-        elif player and player.just_pressed('x'):
-            anim = Animation(obj=self, property='azimuth', deltaval=math.pi/2, dur=0.5,
-                interpolant=Interpolant.quintic, channel=1)
-            anim.start()
+        if player:
+            L = player.tossed_right_stick_left()
+            R = player.tossed_right_stick_right()
+            if L or player.just_pressed('y'):
+                anim = Animation(obj=self, property='azimuth', deltaval=-math.pi/2, dur=0.5,
+                    interpolant=Interpolant.quintic, channel=1)
+                anim.start()
+            elif R or player.just_pressed('b'):
+                anim = Animation(obj=self, property='azimuth', deltaval=math.pi/2, dur=0.5,
+                    interpolant=Interpolant.quintic, channel=1)
+                anim.start()
 
     def update(self, t, dt):
         # Update camera azimuth
@@ -55,16 +58,12 @@ class Camera:
                 r = max(3, self.radius)
                 self.azimuth = sgn*math.asin(self.game.cube.pos[0]/r) + math.pi/2
 
-        #self.pos = Vector3([
-        #    self.radius * np.cos(self.azimuth),
-        #    self.elevation,  
-            #self.radius * np.sin(self.azimuth)
-        #])
+        else:
+            self.target = glm.vec4(self.target) # drop live reference
+
         self.pos = self.target + self.orbit(self.azimuth, self.altitude, self.radius)
-        #print('pos',np.round(self.pos,2))
 
         self.view = self.get_view_matrix()
-        #print(np.round(self.view,2))
 
     def get_forward(self):
         """

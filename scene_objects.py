@@ -225,7 +225,7 @@ class Cube(SceneObject):
 
         # basis in xz plane based on camera's forward direction
         # used to take combinations by input vector for camera-relative control
-        cam_basis_xz = Mat4.build_basis(cam_right_xz, self.up, cam_forward_xz)
+        cam_basis_xz = Mat4.concat_basis(cam_right_xz, self.up, cam_forward_xz)
         cam_relative_vel = cam_basis_xz @ vdir
 
         #print(cam_forward, cam_forward_xz, cam_right_xz, cam_relative_vel)
@@ -261,11 +261,8 @@ class Cube(SceneObject):
 
     def update(self, t, dt):
         # parameters and constants (here for temporary conveinence)
-        hz = 1/4
-        w = 2*PI*hz
-        r = 1.5 + glm.cos(w*t/2)
         decay_rate = 0.9
-        g = 9.8
+        g = 9.8*6
 
         dpadEnabled = True
         if self.player:
@@ -292,32 +289,28 @@ class Cube(SceneObject):
             vdir = self.get_cam_relative_velocity(vdir, norm)
 
             self.vel += vdir*norm*self.maxvel
-            speed = glm.length(self.vel)
+            speed = glm.length(self.vel.xz)
             if speed > self.maxspeed:
-                v = glm.normalize(self.vel)
-                self.vel = v*self.maxspeed
+                v = glm.normalize(self.vel.xz)
+                self.vel.xz = v*self.maxspeed
 
-
-
-        old="""
-        # check for controller input
-        if self.game.controls.right:
-            self.vel[0] += self.maxvel 
-        if self.game.controls.left:
-            self.vel[0] -= self.maxvel 
-        if self.game.controls.up:
-            self.vel[2] -= self.maxvel 
-        if self.game.controls.down:
-            self.vel[2] += self.maxvel 
-            """
+        surface = self.game.patch
+        x,y,z = self.pos.xyz
+        self.surface_point = glm.vec3(surface.get_point(x,z))
 
         # jumping logic (hack for now)
-        if not self.jumping and self.game.controls.space:
-            self.jumping = True
-            self.vel[1] += self.maxvel/2
+        jumpvel = 30
+        if not self.jumping and (self.player and self.player.just_pressed('a')):
+             self.jumping = True
+             self.vel[1] += jumpvel
+             print('jump start, pos:', self.pos.y)
 
         if self.jumping:
-            self.vel[1] += -g*dt #self.vel[1]*decay_rate*dt
+             self.vel[1] += -g*dt #self.vel[1]*decay_rate*dt
+             if self.pos.y + self.vel[1]*dt < self.surface_point.y:# + dt*g:# + self.size/2:
+                #self.pos.y = self.surface_point.y #0
+                self.jumping = False
+                print('jump end')
 
         # physics step
         self.integrate(t, dt)
@@ -327,13 +320,15 @@ class Cube(SceneObject):
         self.clamp_x_position_to_surface(self.game.patch, i=2)
 
         # constrain avatar to surface
-        self.stick_to_surface3(self.game.patch)
+        #self.stick_to_surface(self.game.patch)
+        self.stick_to_surface(self.game.patch)
 
         # rotate cube's object matrix to match cam_rel_vel
         # after stick to surface forward is 'undefined' and not useful,
         # calculated as an artifact based on the geometry of the surface
         # it is moving upon
 
+        # defunct
         if self.player and False:
             if glm.length(vdir) > 0:
                 vdir = glm.normalize(vdir).xyz
@@ -355,7 +350,7 @@ class Cube(SceneObject):
         #self.rotate_about_local_up(self.forward_offset_angle) #TODO fix for new frame system
 
 
-    def stick_to_surface3(self, surface:'SplineMesh'):
+    def stick_to_surface(self, surface:'SplineMesh'):
         x,y,z = self.pos.xyz
         surface_point = glm.vec3(surface.get_point(x,z))
         surface_normal = glm.vec3(surface.get_normal(x,z))
@@ -375,13 +370,18 @@ class Cube(SceneObject):
         #b1 = glm.cross(b2, b3)
         #print(glm.length(b1), glm.length(b2), glm.length(b3), glm.dot(b1,b2), glm.dot(b1,b3), glm.dot(b2,b3))
 
-        #self.set_basis(b1, b2, b3)
-        self.o = Mat4.build_frame(up=b2, forward=b3, origin=surface_point)
+        #self.o = Mat4.build_frame(up=b2, forward=b3, origin=surface_point)
+        if glm.length(self.vel.xz) > 0:
+            basis = Mat4.build_basis(up=b2, forward=b3)
+            self.set_basis(*basis) #basis[0],basis[1],basis[2])
+
+        if not self.jumping:
+            self.pos.xyz = surface_point
 
         #R = Mat4.axis_to_axis(self.up_normal, surface_normal)
         #self.transform(deltaTrans*R) # TODO offset here (with frame up_normal) (instead of world)
 
-    def stick_to_surface2(self, surface:'SplineMesh'):
+    def stick_to_surface_delta(self, surface:'SplineMesh'):
         x,y,z = self.pos.xyz
         surface_point = glm.vec3(surface.get_point(x,z))
         surface_normal = glm.vec3(surface.get_normal(x,z))
@@ -390,33 +390,33 @@ class Cube(SceneObject):
         print('deltaPos:', deltaPos)
         deltaTrans = glm.translate(deltaPos)
         self.hover_offset[3, 1] = self.size/2 + 0.005*10 # applied at end of frame
-        R = Mat4.axis_to_axis(self.up_normal, surface_normal)
-        self.transform(deltaTrans*R) # TODO offset here (with frame up_normal) (instead of world)
 
-    def stick_to_surface(self, surface: 'SplineMesh'):
-        x,y,z = self.pos.xyz
+        epsilon = 1e-6
+        R = glm.mat4()
+        close = glm.length(glm.cross(self.up_normal, surface_normal))
+        print(f'diff normal: {close:.4f}')
+        if close > epsilon:
+            RmatchNormal = Mat4.axis_to_axis(self.up_normal, surface_normal)
+            R = R * RmatchNormal
 
-        surface_point = glm.vec3(surface.get_point(x,z))
-        surface_normal = glm.vec3(surface.get_normal(x,z))
-        #print(surface_normal)
+        # rotate the current forward vector by the match normal matrix
+        forward = self.get_forward().xyz
+        altered_forward = R * forward
 
-        self.ground_point = surface_point
-        #self.pos = self.ground_point.copy()
-        #self.transform(Mat4.from_translation(surface_normal))
-        self.hover_offset[3, 1] = self.size/2 + 0.005*10
+        # get the current velocity direction, but projected onto perp of surface normal
+        # in case of 0 velocity, fall back to using the current forward vector
 
-
-        # trying out direct frame building instead of rotating to match normal
-        # this forces a forward direction, and gets rid of stability issues/wobble
-        forward = self.e3
-        self.o = Mat4.build_frame(up=surface_normal, forward=forward, origin=self.ground_point)
-        #print('before', self.pos)
-        #self.transform(Mat4.from_translation((0.0,0.5,0.0)))
-        #print('afterT', self.pos)
-        #sys.exit()
-
-        #self.match_normals(surface_normal) 
-
+        vnorm = glm.length(self.vel)
+        b3_in_xz = self.vel/vnorm if vnorm > 0 else altered_forward
+        b3 = b3_in_xz - project_onto_axis(surface_normal, b3_in_xz)
+        b3 = glm.normalize(b3)
+        close = glm.length(glm.cross(forward, b3))
+        print(f'diff forward: {close:.4f}')
+        if close > epsilon:
+            RmatchForward = Mat4.axis_to_axis(altered_forward, b3)
+            R = R @ RmatchForward
+        self.transform(deltaTrans)
+        self.transform(R) # TODO offset here (with frame up_normal) (instead of world)
 
     def load_mesh(self):
         """Create vertices and colors for a cube."""

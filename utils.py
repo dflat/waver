@@ -24,7 +24,7 @@ def project_onto_axis(a, v):
 
 class Mat4:
 	@classmethod
-	def build_basis(cls, b1, b2, b3):
+	def concat_basis(cls, b1, b2, b3):
 		return glm.mat3(b1,b2,b3)
 
 	@classmethod
@@ -32,6 +32,26 @@ class Mat4:
 		frame = glm.mat4(basis) 
 		frame[3] = glm.vec4(origin, 1)
 		return frame
+
+	@classmethod
+	def build_basis(cls, up, forward):
+	    """
+	    Construct a right-handed 3D orthonormal basis given a unit "up" vector
+	    and a vector loosely in the "forward" direction.
+
+	    Parameters:
+	        up (np.ndarray): Unit vector pointing "up".
+	        forward (np.ndarray): Vector loosely in the "forward" direction.
+	    """
+	    forward = glm.normalize(forward)
+	    
+	    right = glm.cross(up, forward)
+	    right = glm.normalize(right)
+	    
+	    # Compute the corrected forward vector (cross product of right and up)
+	    forward = glm.cross(right, up)
+
+	    return glm.mat3(right,up,forward)
 
 	@classmethod
 	def build_frame(cls, up, forward, origin=(0,0,0)):
@@ -124,7 +144,10 @@ class Mat4:
 		M[1,2] = h*v[1]*v[2] + v[0]
 
 		#return M #glm.mat4(M)
-		return glm.mat4(glm.quat(s, t)) # faster: try this if surface normal issue TODO
+		q = glm.quat(s, t)
+		M2 = glm.mat4(q) # faster: try this if surface normal issue TODO
+		#assert np.allclose(M, M2) or np.allclose(M, glm.mat4(-q))
+		return M2
 
 	@staticmethod
 	def cross(a,b):
