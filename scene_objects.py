@@ -182,10 +182,10 @@ class Cube(SceneObject):
         #print(xmin, xmax, self.pos)
         if self.pos[i] < xmin:
             self.pos[i] = xmin
-            self.vel[i] = 0
+            #self.vel[i] = 0
         elif self.pos[i] > xmax:
             self.pos[i] = xmax
-            self.vel[i] = 0
+            #self.vel[i] = 0
 
     def link_to_gamepad(self, pad):
         self.player = pad
@@ -294,6 +294,7 @@ class Cube(SceneObject):
                 v = glm.normalize(self.vel.xz)
                 self.vel.xz = v*self.maxspeed
 
+        # get player's current position
         surface = self.game.patch
         x,y,z = self.pos.xyz
         self.surface_point = glm.vec3(surface.get_point(x,z))
@@ -355,26 +356,23 @@ class Cube(SceneObject):
         surface_point = glm.vec3(surface.get_point(x,z))
         surface_normal = glm.vec3(surface.get_normal(x,z))
 
-        #deltaPos = surface_point - self.pos.xyz
-        #print('deltaPos:', deltaPos)
-        #deltaTrans = glm.translate(deltaPos)
-        #self.pos.xyz += deltaPos
-
         self.hover_offset[3, 1] = self.size/2 + 0.005*10 # applied at end of frame
-        #self.hover_offset[3].xyz = surface_normal*(self.size/2 + 0.005)
 
         # set rotation basis to match surface normal and velocity direction
         b2 = surface_normal
-        vnorm = glm.length(self.vel)
-        b3 = self.vel/vnorm if vnorm > 0 else self.get_forward().xyz
-        #b1 = glm.cross(b2, b3)
-        #print(glm.length(b1), glm.length(b2), glm.length(b3), glm.dot(b1,b2), glm.dot(b1,b3), glm.dot(b2,b3))
 
-        #self.o = Mat4.build_frame(up=b2, forward=b3, origin=surface_point)
+        #vnorm = glm.length(self.vel)
+        #b3 = self.vel/vnorm if vnorm > 0 else self.get_forward().xyz
+
+        vnorm = glm.length(self.vel.xz)
+        vel_xz = glm.vec3(self.vel.x, 0, self.vel.z)
+        b3 = vel_xz/vnorm if vnorm > 0 else self.get_forward().xyz
+
         if glm.length(self.vel.xz) > 0:
             basis = Mat4.build_basis(up=b2, forward=b3)
             self.set_basis(*basis) #basis[0],basis[1],basis[2])
 
+        # lock position to surface when player is on the ground
         if not self.jumping:
             self.pos.xyz = surface_point
 
