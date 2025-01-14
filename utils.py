@@ -1,80 +1,81 @@
 import numpy as np
-import math
 import glm
+from glm import vec3
 
 def rescale(x,mn=0,mx=1,a=0,b=1):
 	return a + (b-a)*(x - mn)/(mx-mn)
 
-def clamp(x, a=0, b=1):
-    return min(b, max(a, x))
+def clamp(x, a=0.0, b=1.0):
+	return min(b, max(a, x))
 
 class Color:
-    RED = np.array([1,0,0])
-    GREEN = np.array([0,1,0])
-    BLUE = np.array([0,0,1])
-    MAGENTA = np.array([1,0,1])
-    CYAN = np.array([0,1,1])
-    YELLOW = np.array([1,1,0])
-    GREY = np.array([.6,.6,.6])
-    LIGHTGREY = np.array([.9,.9,.9])
-    WHITE = np.array([1,1,1])
+	RED = np.array([1,0,0])
+	GREEN = np.array([0,1,0])
+	BLUE = np.array([0,0,1])
+	MAGENTA = np.array([1,0,1])
+	CYAN = np.array([0,1,1])
+	YELLOW = np.array([1,1,0])
+	GREY = np.array([.6,.6,.6])
+	LIGHTGREY = np.array([.9,.9,.9])
+	WHITE = np.array([1,1,1])
+	STEEL = vec3(.3,.3,.4)*1.75
 
 def project_onto_axis(a, v):
 	return glm.dot(a,v)*a
 
 class Mat4:
 	@classmethod
-	def concat_basis(cls, b1, b2, b3):
+	def concat_basis(cls, b1:vec3, b2:vec3, b3:vec3):
 		return glm.mat3(b1,b2,b3)
 
 	@classmethod
-	def from_basis(self, basis: glm.mat3, origin=(0,0,0)):
+	def from_basis(cls, basis: glm.mat3, origin=(0,0,0)):
 		frame = glm.mat4(basis) 
 		frame[3] = glm.vec4(origin, 1)
 		return frame
 
 	@classmethod
 	def build_basis(cls, up, forward):
-	    """
-	    Construct a right-handed 3D orthonormal basis given a unit "up" vector
-	    and a vector loosely in the "forward" direction.
+		"""
+		Construct a right-handed 3D orthonormal basis given a unit "up" vector
+		and a vector loosely in the "forward" direction.
 
-	    Parameters:
-	        up (np.ndarray): Unit vector pointing "up".
-	        forward (np.ndarray): Vector loosely in the "forward" direction.
-	    """
-	    forward = glm.normalize(forward)
-	    
-	    right = glm.cross(up, forward)
-	    right = glm.normalize(right)
-	    
-	    # Compute the corrected forward vector (cross product of right and up)
-	    forward = glm.cross(right, up)
+		Parameters:
+			up (np.ndarray): Unit vector pointing "up".
+			forward (np.ndarray): Vector loosely in the "forward" direction.
+		"""
+		forward = glm.normalize(forward)
+		
+		right = glm.cross(up, forward)
+		right = glm.normalize(right)
+		
+		# Compute the corrected forward vector (cross product of right and up)
+		forward = glm.cross(right, up)
 
-	    return glm.mat3(right,up,forward)
+		return glm.mat3(right,up,forward)
 
 	@classmethod
 	def build_frame(cls, up, forward, origin=(0,0,0)):
-	    """
-	    Construct a right-handed 3D orthonormal basis given a unit "up" vector
-	    and a vector loosely in the "forward" direction.
+		"""
+		Construct a right-handed 3D orthonormal basis given a unit "up" vector
+		and a vector loosely in the "forward" direction.
 
-	    Parameters:
-	        up (np.ndarray): Unit vector pointing "up".
-	        forward (np.ndarray): Vector loosely in the "forward" direction.
-	    """
-	    forward = glm.normalize(forward)
-	    
-	    right = glm.cross(up, forward)
-	    right = glm.normalize(right)
-	    
-	    # Compute the corrected forward vector (cross product of right and up)
-	    forward = glm.cross(right, up)
+		Parameters:
+			up (np.ndarray): Unit vector pointing "up".
+			forward (np.ndarray): Vector loosely in the "forward" direction.
+		"""
+		forward = glm.normalize(forward)
+		
+		right = glm.cross(up, forward)
+		right = glm.normalize(right)
+		
+		# Compute the corrected forward vector (cross product of right and up)
+		forward = glm.cross(right, up)
 
-	    frame = glm.mat4(glm.mat3(right,up,forward)) 
-	    frame[3].xyz = origin
+		frame = glm.mat4(glm.mat3(right,up,forward)) 
+		frame[3].xyz = origin
 
-	    return frame
+		return frame
 
 	@classmethod
 	def get_transform_in_basis(cls, M, A):

@@ -2,6 +2,7 @@ import time
 from utils import clamp, rescale
 from splines import bez
 from collections import defaultdict
+from scene_objects import SceneObject
 
 class Interpolant:
 	@classmethod

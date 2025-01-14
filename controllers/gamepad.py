@@ -5,6 +5,7 @@ import numpy as np
 import time
 from copy import deepcopy
 from collections import deque
+import platform
 
 # Add PS5 controller to database...
 # for some reason it isn't listed in pyglet's
@@ -13,6 +14,7 @@ from collections import deque
 pyglet.input.controller_db.mapping_list.append("030000004c050000e60c000000010000,PS5 Controller,a:b1,b:b2,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b12,leftshoulder:b4,leftstick:b10,lefttrigger:a3,leftx:a0,lefty:a1,misc1:b13,rightshoulder:b5,rightstick:b11,righttrigger:a4,rightx:a2,righty:a5,start:b9,x:b0,y:b3,")
 
 # Initialize controller manager
+windows = platform.system() == "Windows"
 
 
 class GamePadState:
@@ -26,6 +28,8 @@ class GamePadState:
         self.dpright = False
         self.dpup = False
         self.dpdown = False
+        self.lefttrigger = False
+        self.righttrigger = False
     
     def __repr__(self):
         return repr(self.__dict__)
@@ -58,6 +62,8 @@ class GamePad:
             vdir = vec3()
         else:
             vdir = v/norm
+        if windows:
+            vdir.z *= -1
         return vdir, norm
     
     def just_pressed(self, button: str):
@@ -90,14 +96,19 @@ class GamePad:
         s.b = c.b
         s.x = c.x
         s.y = c.y
+
         s.dpleft = c.dpleft
         s.dpright = c.dpright
         s.dpup = c.dpup
         s.dpdown = c.dpdown
+
         s.sticks[0][0] = c.leftx
         s.sticks[0][2] = c.lefty
         s.sticks[1][0] = c.rightx
         s.sticks[1][2] = c.righty
+
+        s.lefttrigger = c.lefttrigger
+        s.righttrigger = c.righttrigger
         #print(c.__dict__)
         #print(s)
 

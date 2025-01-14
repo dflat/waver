@@ -8,7 +8,7 @@ class Camera:
     def __init__(self, game):
         self.game = game
         self.azimuth = 0*math.pi/4 # looking down center of +xz
-        self.altitude = math.pi/2*0.65 
+        self.altitude = math.pi/2*0.85 #0.65 
         self.dtheta = 0.00025*10
         self.spin = False
         self.azimuth_lock = False
@@ -21,7 +21,7 @@ class Camera:
         self.track = True
         self.inverted_x_track = False # reverse the azimuth against target's x translation
 
-    def orbit(self, u, v, r=5):
+    def orbit(self, u, v, r=5.0):
         x = np.sin(v) * np.cos(u)
         z = np.sin(v) * np.sin(u)
         y = np.cos(v)
@@ -34,13 +34,18 @@ class Camera:
             L = player.tossed_right_stick_left()
             R = player.tossed_right_stick_right()
             if L or player.just_pressed('y'):
-                anim = Animation(obj=self, property='azimuth', deltaval=-math.pi/2, dur=0.5,
+                anim = Animation(obj=self, property='azimuth', deltaval=math.pi/4, dur=0.5,
                     interpolant=Interpolant.quintic, channel=1)
                 anim.start()
             elif R or player.just_pressed('b'):
-                anim = Animation(obj=self, property='azimuth', deltaval=math.pi/2, dur=0.5,
+                anim = Animation(obj=self, property='azimuth', deltaval=-math.pi/4, dur=0.5,
                     interpolant=Interpolant.quintic, channel=1)
                 anim.start()
+
+            maxmag = 6
+            lt = player.state.lefttrigger*maxmag
+            rt = -player.state.righttrigger*maxmag
+            self.game.mouse_drag_event(x=0,y=0,dx=lt+rt,dy=0)
 
     def update(self, t, dt):
         # Update camera azimuth

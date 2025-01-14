@@ -126,30 +126,48 @@ class SceneObject:
     def render(self):
         self.vao.render(self.render_mode)
 
-    def _load(self):
-        self.verts, self.colors = self.load_mesh()
-        self.vbo = self.ctx.buffer(np.hstack((self.verts, self.colors)).astype('f4').tobytes())
+    def _load_buffers(self):
+        #self.verts, self.colors, self.normals = self.load_mesh()
+        attribute_data = self.load_mesh()
+        self.vbo = self.ctx.buffer(np.hstack(attribute_data).astype('f4').tobytes())
         self.vao = self.ctx.vertex_array(
             self.program,
             [(self.vbo, self.data_format, *self.attribute_names)]
         )
 
-class Cube(SceneObject):
-    maxvel = 1.25
-    maxspeed = 8
-    max_angular_speed = 5
+    # def _load_buffers(self):
+    #     self.verts, self.colors = self.load_mesh()
+    #     self.vbo = self.ctx.buffer(np.hstack((self.verts, self.colors)).astype('f4').tobytes())
+    #     self.vao = self.ctx.vertex_array(
+    #         self.program,
+    #         [(self.vbo, self.data_format, *self.attribute_names)]
+    #     )
 
-    def __init__(self, game, size=1):
+    def _load(self):
+        self._load_buffers()
+        #self.verts, self.colors = self.load_mesh()
+
+class Cube(SceneObject):
+    _maxvel = 0.75*3 #1.25
+    maxspeed = 8*2*2
+    max_angular_speed = 5
+    _color = Color.STEEL
+    data_format = '3f 3f 3f'
+    attribute_names = ['in_position', 'in_color', 'in_normal']
+
+    def __init__(self, game, size=1.0):
         self.size = size
+        super().__init__(game)
         self.forward_offset_angle = 0
         self.jumping = False
-        self.friction_coefficient = 4.75 # ~4 for 'ice', ~8 for quick stop
-        self.mass = 1
+        self.friction_coefficient = 60 #4.75 # ~4 for 'ice', ~8 for quick stop
+        self.mass = 6
+        self.maxvel = self._maxvel
         self.y_rot = Mat4.identity()
         self.dir_rot = Mat4.identity()
         self.hover_offset = Mat4.identity()
         self.player = None
-        super().__init__(game)
+        #super().__init__(game)
     
     def get_object_matrix(self):
         """
@@ -167,9 +185,12 @@ class Cube(SceneObject):
 
     def integrate(self,t,dt):
         # Update velocity with acceleration and apply frictional decay
-        friction_force = -self.friction_coefficient * self.vel
+        #friction_force = -self.friction_coefficient * self.vel
+        vel_xz = glm.vec3(self.vel.x, 0, self.vel.z) # TODO work on this
+        friction_force = -self.friction_coefficient * vel_xz
         net_acc = self.acc + friction_force / self.mass
         self.vel += net_acc * dt
+        #print('vel', self.vel)
 
         # Update position based on velocity
         self.pos.xyz += self.vel * dt
@@ -262,7 +283,7 @@ class Cube(SceneObject):
     def update(self, t, dt):
         # parameters and constants (here for temporary conveinence)
         decay_rate = 0.9
-        g = 9.8*6
+        grav = 9.8#*6
 
         dpadEnabled = True
         if self.player:
@@ -282,6 +303,11 @@ class Cube(SceneObject):
                     vdir[2] += 1
                     norm = glm.length(vdir)
 
+            if self.player.state.x:
+                self.maxvel = self._maxvel*2
+            else:
+                self.maxvel = self._maxvel
+
             # handle player's looking direction
             # match to velocity direction
 
@@ -300,17 +326,19 @@ class Cube(SceneObject):
         self.surface_point = glm.vec3(surface.get_point(x,z))
 
         # jumping logic (hack for now)
-        jumpvel = 30
-        if not self.jumping and (self.player and self.player.just_pressed('a')):
+        jumpvel = 20
+        if not self.jumping:
+            if (self.player and self.player.just_pressed('a')) or self.game.controls.just_pressed('space'):
              self.jumping = True
-             self.vel[1] += jumpvel
+             self.vel.y += jumpvel
              print('jump start, pos:', self.pos.y)
 
         if self.jumping:
-             self.vel[1] += -g*dt #self.vel[1]*decay_rate*dt
-             if self.pos.y + self.vel[1]*dt < self.surface_point.y:# + dt*g:# + self.size/2:
+             self.vel.y += -self.mass*grav*dt #self.vel[1]*decay_rate*dt
+             if self.pos.y + self.vel.y*dt < self.surface_point.y:# + dt*g:# + self.size/2:
                 #self.pos.y = self.surface_point.y #0
                 self.jumping = False
+                self.vel.y = 0
                 print('jump end')
 
         # physics step
@@ -350,6 +378,9 @@ class Cube(SceneObject):
         #self.forward_offset_angle = self.game.controls.cursor[0]*(-math.pi/2)#w*dt*3
         #self.rotate_about_local_up(self.forward_offset_angle) #TODO fix for new frame system
 
+
+    def calculate_orientation(self):
+        pass
 
     def stick_to_surface(self, surface:'SplineMesh'):
         x,y,z = self.pos.xyz
@@ -416,6 +447,15 @@ class Cube(SceneObject):
         self.transform(deltaTrans)
         self.transform(R) # TODO offset here (with frame up_normal) (instead of world)
 
+    def _load_buffers(self):
+        #self.verts, self.colors, self.normals = self.load_mesh()
+        attribute_data = self.load_mesh()
+        self.vbo = self.ctx.buffer(np.hstack(attribute_data).astype('f4').tobytes())
+        self.vao = self.ctx.vertex_array(
+            self.program,
+            [(self.vbo, self.data_format, *self.attribute_names)]
+        )
+
     def load_mesh(self):
         """Create vertices and colors for a cube."""
         w = self.size/2
@@ -445,18 +485,32 @@ class Cube(SceneObject):
 
         tile = (6,1)
         colors = np.concatenate((
-            np.tile(Color.RED,tile),
-            np.tile(Color.GREEN,tile),
             np.tile(Color.BLUE,tile),
-            np.tile(Color.MAGENTA,tile),
-            np.tile(Color.CYAN,tile),
-            np.tile(Color.YELLOW,tile),
+            np.tile(Color.BLUE,tile),
+            np.tile(Color.BLUE,tile),
+            np.tile(Color.BLUE,tile),
+            np.tile(Color.BLUE,tile),
+            np.tile(Color.BLUE,tile),
         ), dtype='f4')
+        colors = np.tile(self._color, (36,1))
+        colors.dtype='f4'
 
-        return vertices[indices], colors 
+        normals = np.concatenate((
+            np.tile(self.e3, tile),
+            np.tile(-self.e3, tile),
+            np.tile(-self.e2, tile),
+            np.tile(self.e2, tile),
+            np.tile(-self.e1, tile),
+            np.tile(self.e1, tile),
+            ), dtype = 'f4')
+
+        return vertices[indices], colors, normals
 
 
 class SplineMesh(SceneObject):
+    data_format = '3f 3f 3f'
+    attribute_names = ['in_position', 'in_color', 'in_normal']
+
     def __init__(self, game, interval=(0,3), n_samps=11, origin=glm.vec3()):
         self.origin = origin
         self.interval = interval
@@ -504,7 +558,7 @@ class SplineMesh(SceneObject):
         """
         # Prepare indices and colors
 
-        wm = wave_mesh(*self.interval, 4, A=1) # 4 x 4 grid over interval
+        wm = wave_mesh(*self.interval, 4, A=10) # 4 x 4 grid over interval
         sp = SplinePatch(wm)
         self.patch = sp
         ts = np.linspace(0,1,self.n_samps)
@@ -536,7 +590,10 @@ class SplineMesh(SceneObject):
         indices = np.array(indices, dtype=np.uint32).flatten()  # Shape becomes (m,)
         colors = np.array(colors, dtype=np.float32)  # Shape becomes (m, 3)
 
-        return vertices[indices], colors
+        verts = vertices[indices]
+        normals = np.array([self.get_normal(x,z) for x,y,z in verts])
+        return verts, colors, normals
+        #return vertices[indices], colors
 
 
 class Grid(SceneObject):

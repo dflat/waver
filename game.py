@@ -11,11 +11,14 @@ from splines import Spline, SplinePatch, grid, wave_mesh
 from scene_objects import SceneObject, Cube, Grid, Axes, SplineMesh
 from utils import Mat4, Color, clamp, rescale
 from camera import Camera
+from lights import LightArray
 from controllers.gamepad import GamePadManager
 from animation import Animation
 from pprint import pprint
+import os
 
 PI = glm.pi()
+
 
 class Game(mglw.WindowConfig):
     gl_version = (3, 3)
@@ -23,13 +26,26 @@ class Game(mglw.WindowConfig):
     window_size = 1280,720
     aspect_ratio = 16 / 9
     resource_dir = (Path(__file__).parent / 'resources').resolve()
+    shader_dir = 'shaders'
     clear_color_val = 0.19#0.09#0.15 #0.9
     samples = 2
+    vert_shader = 'vert.glsl' #simple_vertex.glsl'
+    frag_shader = 'frag.glsl' #'fragment.glsl'
+
+    def _load_shaders(self):
+        root = os.path.join(self.resource_dir, self.shader_dir)
+        vs = open(os.path.join(root, self.vert_shader), 'rb').read()
+        fs = open(os.path.join(root, self.frag_shader), 'rb').read()
+        self.program = self.ctx.program(vertex_shader=vs, fragment_shader=fs)
+        #for key, value in self.program.uniforms.items():
+        #    print(f"Uniform name: {key}, Location: {value}")
+
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
         self.ctx.enable(moderngl.DEPTH_TEST)# | moderngl.CULL_FACE)
+
         self.dt = 0
         self.t = 0
         self.frame = 0
@@ -39,62 +55,7 @@ class Game(mglw.WindowConfig):
         pprint(vars(self.wnd))
         self.wnd.print_context_info()
 
-        self.program = self.ctx.program(
-            vertex_shader="""
-            #version 330
-            in vec3 in_position;
-            in vec3 in_color;
-            out vec3 color;
-            uniform mat4 model;
-            uniform mat4 view;
-            uniform mat4 projection;
-            //uniform float time;
-
-            float pi = 3.14159;
-            float freq = 1/4.0;
-            float A = 0.25;
-
-            void main() {
-                //float vx = in_position.x;
-                //float x = sin(2*pi*freq*time*vx);
-                vec3 offset = vec3(0,0,0);
-                gl_Position = projection * view * model * vec4(offset+in_position, 1.0);
-                color = in_color;
-            }
-            """,
-            fragment_shader="""
-            #version 330
-            in vec3 color;
-            out vec4 fragColor;
-
-            float pi = 3.14159;
-            float freq = 1.0 + 0*1/2.0;
-            vec2 c = vec2(1280/2, 720/2);
-            float X = 1280;
-            float Y = 720;
-            float n = 10;
-            uniform float time;
-
-            void main() {
-
-                float vx = gl_FragCoord.x/X;
-                float vy = gl_FragCoord.y/Y;
-                float xn = sin(2*pi*freq*time*vx);
-                float yn = sin(2*pi*freq*time*vy);
-                float m = xn*yn;
-
-                float r = length(gl_FragCoord.xy - c);
-                float y = gl_FragCoord.y;
-                float s = sin(2*pi*freq*y);
-                s = floor(mod(y/7.2, 2))/2;
-                vec3 offset = vec3(s,s,s);
-                float L = pow(1 - r/X, 1);
-                float mask = floor(n*L);
-                fragColor = vec4(mask/n*color, 1.0);
-                fragColor = fragColor;//* m;
-            }
-            """
-        )
+        self._load_shaders()
 
         # instantiate objects
         cube_size = 0.5
@@ -104,7 +65,7 @@ class Game(mglw.WindowConfig):
         self.axes = Axes(self, frame=self.world, size=5)
         self.camxzAxes = Axes(self, frame=self.world, size=1)
         #self.grid = Grid(self, unit=cube_size)
-        self.patch = SplineMesh(self, interval=(-3,3), n_samps=22*2)
+        self.patch = SplineMesh(self, interval=(-60,60), n_samps=22*2)
 
 
         # setup projection matrices (orthographic and perspective)
@@ -115,6 +76,29 @@ class Game(mglw.WindowConfig):
 
         self.use_perspective = True
 
+
+        # set up lights
+        self.lighting = LightArray(self)
+        white_light = (glm.vec4(2.0, 0.75, 0.0, 1.0),  # Position
+                     glm.vec4(0.0, 1.0, 0.2, 1.0),               # White color
+                     1.0)                                      # Intensity
+
+        blue_light = (glm.vec4(-50.0, 3.75, -50.0, 1.0),
+                     glm.vec4(0.2, 0.0, 1.0, 1.0),
+                     0.2)                        
+        red_light = (glm.vec4(50.0, 2, -60.0, 1.0),
+                     glm.vec4(0.8, 0.0, 0.6, 1.0),  
+                     0.5)                          
+        green_light = (glm.vec4(-40.0, 4, 45.0, 1.0),
+                     glm.vec4(0.2, 0.6, 0.2, 1.0),  
+                     0.6)                          
+        self.lighting.add(*white_light)
+        self.lighting.add(*blue_light)
+        self.lighting.add(*red_light)
+        self.lighting.add(*green_light)
+
+
+        # set up camera
         self.cam = Camera(self)
         self.camAxes = Axes(self, parent=self.cam, aux_origin=glm.vec4(0,2,0,1), size=1)
 
@@ -122,7 +106,7 @@ class Game(mglw.WindowConfig):
         self.pad_manager = GamePadManager(self)
 
         # setup uniforms
-        self.uniforms['time'] = self.program['time']
+        #self.uniforms['time'] = self.program['time']
 
         #pyglet.clock.schedule_interval(self.pad_manager.update, 1 / 2)
         #threading.Thread(target=pyglet.app.run).start()
@@ -167,8 +151,12 @@ class Game(mglw.WindowConfig):
             obj.handle_input(self.controls)
             obj.update(t, dt)
 
+        # update lighting
+        self.lighting.update(t, dt)
+
         # update miscelleneous uniforms
-        self.program['time'].value = t
+        #self.program['time'].value = t
+        self.lighting.send_to_glsl()
 
         # step animations (todo: figure out where best to do this in control flow)
         for anim in list(Animation.playing.values()):
@@ -180,6 +168,8 @@ class Game(mglw.WindowConfig):
 
         view = self.cam.view
         self.program['view'].write(view.to_bytes())#.astype('f4'))#.tobytes())
+        self.program['eye_position'] = self.cam.pos.xyz
+
 
         # update projection matrix
         projection = self.perspective_projection if self.use_perspective else self.orthographic_projection
@@ -218,6 +208,7 @@ class Game(mglw.WindowConfig):
             self.controls.release(key)
 
     def mouse_drag_event(self, x, y, dx, dy):
+        #print('drag', dx,dy)
         self.drags_per_second+=1
         radPerSec = 1.5*self.dt
         dx = dx*radPerSec/2
@@ -254,7 +245,7 @@ class Controls:
         self.game = game
         self.keys = self.game.wnd.keys
         self.pressed = {}
-        self.just_pressed = {}
+        self._just_pressed = {}
         self.cursor = glm.vec2()
 
     @property
@@ -275,18 +266,22 @@ class Controls:
     
     def press(self, key):
         self.pressed[key] = 1
-        self.just_pressed[key] = 1
+        self._just_pressed[key] = 1
         print('pressed', key)
 
     def release(self, key):
         self.pressed.pop(key)
         print('released', key)
 
+    def just_pressed(self, keyname: str):
+        key = getattr(self.keys, keyname.upper())
+        return self.was_just_pressed(key)
+
     def was_just_pressed(self, key):
-        return key in self.just_pressed
+        return key in self._just_pressed
 
     def clear_just_pressed(self):
-        self.just_pressed = {} # todo: find out the order of key events/render calls
+        self._just_pressed = {} # todo: find out the order of key events/render calls
 
     def update(self, t, dt):
         K = self.keys
